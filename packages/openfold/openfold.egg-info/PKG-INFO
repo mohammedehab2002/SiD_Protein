@@ -1,0 +1,20 @@
+Metadata-Version: 2.1
+Name: openfold
+Version: 1.0.0
+Summary: A PyTorch reimplementation of DeepMind's AlphaFold 2
+Home-page: https://github.com/aqlaboratory/openfold
+Author: Gustaf Ahdritz & DeepMind
+Author-email: gahdritz@gmail.com
+License: Apache License, Version 2.0
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Programming Language :: Python :: 3.7,Topic :: Scientific/Engineering :: Artificial Intelligence
+License-File: LICENSE
+Requires-Dist: torch
+Requires-Dist: deepspeed
+Requires-Dist: biopython
+Requires-Dist: ml-collections
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: pytorch_lightning
+Requires-Dist: dm-tree

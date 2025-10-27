@@ -1,0 +1,3 @@
+# ninja log v5
+0	16392	1725638708169199273	/home/lyxie/genie/packages/openfold/build/temp.linux-x86_64-cpython-312/openfold/utils/kernel/csrc/softmax_cuda.o	c69965336e4de28b
+12	51980	1725640296208181764	/home/lyxie/genie/packages/openfold/build/temp.linux-x86_64-cpython-312/openfold/utils/kernel/csrc/softmax_cuda_kernel.o	b8b572f453349d56

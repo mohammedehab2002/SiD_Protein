@@ -1,0 +1,8 @@
+torch
+deepspeed
+biopython
+ml-collections
+numpy
+scipy
+pytorch_lightning
+dm-tree
