@@ -51,6 +51,13 @@ Available pretrained model checkpoints are listed in the repository of [Proteina
 curl -L 'https://api.ngc.nvidia.com/v2/resources/org/nvidia/team/clara/proteina_v1.2_dfs_200m_notri/1.0/files?redirect=true&path=proteina_v1.2_DFS_200M_notri.ckpt' -o 'pretrained_checkpoints/proteina_v1.2_DFS_200M_notri.ckpt'
 ```
 
+### Download ProteinMPNN weights
+Please download the ProteinMPNN weights by running
+```bash
+bash download_pmpnn_weghts.sh
+```
+The weights will be stored in `packages/ProteinMPNN/ca_model_weights`.
+
 ### Download additional files
 Although SiD training is data-free for unconditional generation, conditional generation and the fold-class-based evaluation require information about the CATH codes. Therefore, we still need to set up a data directory following the instructions in [Proteina](https://github.com/NVIDIA-Digital-Bio/proteina/tree/main).
 
