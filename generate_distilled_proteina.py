@@ -42,6 +42,7 @@ def main(model_path, out_dir, lengths, conditional, num_batch, batch_size, seed,
     seed_everything(seed)
     device = torch.device(f'cuda' if torch.cuda.is_available() else 'cpu')
     lengths = parse_int_list(lengths)
+    out_dir += f"/{seed}"
     os.makedirs(out_dir, exist_ok=True)
 
     # Load the distilled model
@@ -67,11 +68,14 @@ def parse_int_list(s):
 
 def generate_unconditional(out_dir, G, lengths, num_batch, batch_size, device, nstep, noise_scale):
     # Create output directories
-    eval_input_dir = f"{out_dir}/proteina_uncond_distilled_{nstep}step_noise{noise_scale}_output"
+    eval_input_dir = out_dir # f"{out_dir}/proteina_uncond_distilled_{nstep}step_noise{noise_scale}_output"
     eval_coords_dir, eval_pdb_dir = create_directories(eval_input_dir)
 
     start_time = time.time()
     for niter in tqdm(range(num_batch), desc="Generating unconditional batches"):
+        if niter % 10 == 0:
+            os.makedirs(f"{eval_coords_dir}/{niter // 10}", exist_ok=False)
+            os.makedirs(f"{eval_pdb_dir}/{niter // 10}", exist_ok=False)
         for n in lengths:
             # Prepare batch. Here all proteins in the batch have the same length n.
             batch = {'nres': torch.tensor([n]), 'dt': torch.tensor([0.0025], dtype=torch.float32), 
@@ -86,13 +90,13 @@ def generate_unconditional(out_dir, G, lengths, num_batch, batch_size, device, n
                 x_g = generate_onestep(G, batch, batch_shape, n, mask, x_g, device)
             else:
                 x_g = generate_multistep(G, batch, batch_shape, n, mask, x_g, nstep, noise_scale, device)
-            save_structures(x_g, eval_coords_dir, eval_pdb_dir, n, niter)
+            save_structures(x_g, f"{eval_coords_dir}/{niter // 10}", f"{eval_pdb_dir}/{niter // 10}", n, niter)
     
-    end_time = time.time()
-    with open(os.path.join(eval_input_dir, "total_time.csv"), "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["time", "nsample"])  # optional header
-        writer.writerow([end_time - start_time, num_batch * batch_size * len(lengths)])
+    # end_time = time.time()
+    # with open(os.path.join(eval_input_dir, "total_time.csv"), "w", newline="") as f:
+    #     writer = csv.writer(f)
+    #     writer.writerow(["time", "nsample"])  # optional header
+    #     writer.writerow([end_time - start_time, num_batch * batch_size * len(lengths)])
 
     return eval_input_dir
 
@@ -190,20 +194,20 @@ def save_structures(x_g, eval_coords_dir, eval_pdb_dir, n, niter, cath_code=None
             sampled_cath_codes[f'{n}_{niter}_{sample_idx}'] = cath_code
 
 def create_directories(eval_input_dir):
-    if os.path.exists(eval_input_dir):
-        shutil.rmtree(eval_input_dir)
-    os.mkdir(eval_input_dir)
+    #if os.path.exists(eval_input_dir):
+    #    shutil.rmtree(eval_input_dir)
+    os.makedirs(eval_input_dir, exist_ok=True)
     eval_coords_dir = eval_input_dir + "/coords"
-    if os.path.exists(eval_coords_dir):
-        shutil.rmtree(eval_coords_dir)
-    os.mkdir(eval_coords_dir)
+    #if os.path.exists(eval_coords_dir):
+    #    shutil.rmtree(eval_coords_dir)
+    os.makedirs(eval_coords_dir, exist_ok=True)
     eval_output_dir = eval_input_dir + "/scores"
-    if os.path.exists(eval_output_dir):
-        shutil.rmtree(eval_output_dir)
+    #if os.path.exists(eval_output_dir):
+    #    shutil.rmtree(eval_output_dir)
     eval_pdb_dir = eval_input_dir + "/pdbs"
-    if os.path.exists(eval_pdb_dir):
-        shutil.rmtree(eval_pdb_dir)
-    os.mkdir(eval_pdb_dir)
+    #if os.path.exists(eval_pdb_dir):
+    #    shutil.rmtree(eval_pdb_dir)
+    os.makedirs(eval_pdb_dir, exist_ok=True)
     return eval_coords_dir, eval_pdb_dir
 
 if __name__ == "__main__":

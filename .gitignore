@@ -21,4 +21,6 @@ pretrained_checkpoints/
 *.png
 *.log
 .ipynb_checkpoints/
+*.out
 
+protein_out
