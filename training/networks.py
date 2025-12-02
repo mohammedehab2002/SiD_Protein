@@ -17,6 +17,7 @@ from torch.nn.functional import silu
 from training.proteina.proteinfoundation.proteinflow.proteina import Proteina
 from training.proteina.proteina_utils import xt_dot
 import hydra
+from hydra.core.global_hydra import GlobalHydra
 import os
 from dotenv import load_dotenv
 
@@ -691,6 +692,7 @@ class ProteinaWrapper(torch.nn.Module):
                  **kwargs):
         super().__init__()
         load_dotenv()
+        GlobalHydra.instance().clear()
         with hydra.initialize(config_path, version_base=hydra.__version__):
             cfg = hydra.compose(config_name=config_name)
 

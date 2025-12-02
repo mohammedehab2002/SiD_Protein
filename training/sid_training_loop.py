@@ -30,6 +30,7 @@ from torch_utils import misc
 from dotenv import load_dotenv
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 import pandas as pd
+import itertools
 
 from metrics import sid_metric_main as metric_main
 from training.proteina.proteina_utils import interpolate, sample_reference, extract_clean_sample
@@ -153,6 +154,25 @@ def training_loop(
     #             return_hydra_config=True,
     #         )
     #     len_cath_code = parse_len_cath_code(cfg)
+
+    # Dataloader for real data
+    if network_kwargs.class_name == 'training.networks.ProteinaWrapper':
+        version_base = hydra.__version__
+        config_path = "/home/lyxie/SiD_Protein/training/proteina/configs/datasets_config" # Change this path to your local ABSOLUTE path
+        hydra.initialize_config_dir(config_dir=f"{config_path}/pdb", version_base=version_base)
+
+        cfg = hydra.compose(
+            config_name="pdb_train",
+            return_hydra_config=True,
+        )
+    
+        pdb_datamodule = hydra.utils.instantiate(cfg.datamodule)
+        pdb_datamodule.prepare_data()
+        pdb_datamodule.setup("fit")
+        pdb_train_dataloader = pdb_datamodule.train_dataloader()
+        dataset_iterator = itertools.cycle(pdb_train_dataloader)
+        print(f'Using ProteinaWrapper dataset with {len(pdb_train_dataloader.dataset)} samples.')
+        network_kwargs.update({'val_dataloader': pdb_datamodule.val_dataloader()})
 
     # Construct network.
     dist.print0('Constructing network...')
@@ -306,7 +326,14 @@ def training_loop(
         fake_score_optimizer.zero_grad(set_to_none=True)
 
         for round_idx in range(num_accumulation_rounds):
-            batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+            # batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+            batch = next(dataset_iterator).to(device)
+            x_1, mask, batch_shape, n, dtype = extract_clean_sample(batch)
+            batch['nsamples'] = torch.tensor([batch_gpu])
+            batch['nres'] = torch.tensor([n])
+            mask = mask.to(device)
+            batch['mask'] = mask
+            train_step = torch.randint(0, len(t_steps), (1,)).item()
             with misc.ddp_sync(G_ddp, False):
                 for i, t_step in enumerate(t_steps):
                     # Only compute gradients for the selected time step
@@ -383,7 +410,14 @@ def training_loop(
         g_optimizer.zero_grad(set_to_none=True)
 
         for round_idx in range(num_accumulation_rounds):
-            batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+            # batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+            batch = next(dataset_iterator).to(device)
+            x_1, mask, batch_shape, n, dtype = extract_clean_sample(batch)
+            batch['nsamples'] = torch.tensor([batch_gpu])
+            batch['nres'] = torch.tensor([n])
+            mask = mask.to(device)
+            batch['mask'] = mask
+            train_step = torch.randint(0, len(t_steps), (1,)).item()
             with misc.ddp_sync(G_ddp, (round_idx == num_accumulation_rounds - 1)):
                 for i, t_step in enumerate(t_steps):
                     # Only compute gradients for the selected time step
