@@ -153,3 +153,81 @@ class SID_ProteinaLoss:
         loss = (y_real-y_fake)*( (y_real-x_g)-alpha*(y_real-y_fake)) / weight_factor
         loss = torch.sum(_apply_mask(loss, mask), dim=[1, 2]) / nres
         return loss, ((y_real-y_fake) * (~mask.unsqueeze(-1))).detach().mean(), ((y_real-x_g) * (~mask.unsqueeze(-1))).detach().mean()  
+    
+    def fakescore_discriminator_share_encoder_loss(self, fake_score, batch, x_g, real_x_g=None, tmin=0, tmax = 800):
+        batch_shape = batch['nsamples']
+        n = batch['nres']
+        mask = batch['mask']
+        tdist = torch.distributions.beta.Beta(self.p1, self.p2)
+        samples_beta = tdist.sample(batch_shape).to(x_g.device)
+        samples_uniform = torch.rand(batch_shape, device=x_g.device)
+        u = torch.rand(batch_shape, device=x_g.device)
+        t = torch.where(u < 0.02, samples_uniform, samples_beta)
+        t = torch.clamp(t, min=tmin, max=tmax)
+        batch["t"] = t
+        x_0 = sample_reference(
+                    n=n, shape=(batch_shape,), device=x_g.device, mask=mask
+                )
+        x_1 = _apply_mask(x_g, mask)
+        x_0 = _apply_mask(x_0, mask)
+        x_t = interpolate(x_0, x_1, t)
+        x_t = _apply_mask(x_t, mask)
+        batch["x_t"] = x_t
+        x_1_pred, logit_fake = fake_score(batch, return_flag='encoder_decoder')
+
+        with torch.no_grad():
+            nres = torch.sum(mask, dim=-1)
+            weight_factor = torch.sum(abs((x_g - x_1_pred) * mask[:,:,None]).to(torch.float32), dim=[1, 2])
+            weight_factor = weight_factor.view(-1,1,1)
+
+        x_real = _apply_mask(real_x_g, mask)
+        x_t_real = interpolate(x_0, x_real, t)
+        x_t_real = _apply_mask(x_t_real, mask)
+        batch["x_t"] = x_t_real
+        logit_real = fake_score(batch, return_flag='encoder')
+
+        real_labels = torch.ones_like(logit_real)
+        fake_labels = torch.zeros_like(logit_fake)
+        bce_loss = nn.BCEWithLogitsLoss()
+        loss_fake = bce_loss(logit_fake, fake_labels)
+        loss_real = bce_loss(logit_real, real_labels)
+        loss_D = (loss_fake + loss_real) / 2.0 / weight_factor
+
+        loss_fake_score = compute_fm_loss(x_1, x_1_pred, x_t, t, mask)
+
+        return loss_fake_score, loss_D
+    
+    def generator_share_encoder_loss(self, true_score, fake_score, batch, x_g, network_kwargs, alpha=1.2, tmin=0.02, tmax = 0.98):
+        batch_shape = batch['nsamples']
+        n = batch['nres']
+        mask = batch['mask']
+        t_step = torch.randint(0, network_kwargs.t + 1, (batch_shape,), device=x_g.device)
+        t = self.convert_tstep_to_t(t_step.float(), network_kwargs.t)
+        t = torch.clamp(t, min=tmin, max=tmax)
+        batch["t"] = t
+        x_0 = sample_reference(
+                n=n, shape=(batch_shape,), device=x_g.device, mask=mask
+            )
+        sc_scale_noise = 1.0
+        x_1 = _apply_mask(x_g, mask)
+        x_0 = _apply_mask(x_0, mask)
+        x_t = interpolate(sc_scale_noise * x_0, x_1, t)
+        x_t = _apply_mask(x_t, mask)
+        batch["x_t"] = x_t
+        y_fake, logit_fake = fake_score(batch, return_flag='encoder_decoder')
+        y_real, _ = true_score(batch)
+        y_fake = _apply_mask(y_fake, mask)
+        y_real = _apply_mask(y_real, mask)
+    
+        with torch.no_grad():
+            nres = torch.sum(mask, dim=-1)
+            weight_factor = torch.sum(abs((x_g - y_real) * mask[:,:,None]).to(torch.float32), dim=[1, 2])
+            weight_factor = weight_factor.view(-1,1,1)
+        
+        loss = (y_real-y_fake)*( (y_real-x_g)-alpha*(y_real-y_fake)) / weight_factor
+        loss = torch.sum(_apply_mask(loss, mask), dim=[1, 2]) / nres
+
+        fake_labels = torch.ones_like(logit_fake)
+        bce_loss = nn.BCEWithLogitsLoss()
+        loss_G_adv = bce_loss(logit_fake, fake_labels) / weight_factor
+        return loss, loss_G_adv

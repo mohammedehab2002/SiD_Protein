@@ -326,14 +326,15 @@ def training_loop(
         fake_score_optimizer.zero_grad(set_to_none=True)
 
         for round_idx in range(num_accumulation_rounds):
-            # batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+            batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
             batch = next(dataset_iterator).to(device)
-            x_1, mask, batch_shape, n, dtype = extract_clean_sample(batch)
+            real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
             batch['nsamples'] = torch.tensor([batch_gpu])
             batch['nres'] = torch.tensor([n])
             mask = mask.to(device)
             batch['mask'] = mask
             train_step = torch.randint(0, len(t_steps), (1,)).item()
+            x_1 = torch.zeros((batch_gpu, n, 3), device=device)
             with misc.ddp_sync(G_ddp, False):
                 for i, t_step in enumerate(t_steps):
                     # Only compute gradients for the selected time step
@@ -347,8 +348,14 @@ def training_loop(
             # Accumulate gradients for fake score network
             with misc.ddp_sync(fake_score_ddp, (round_idx == num_accumulation_rounds - 1)):
                 with enable_amp:
-                    fake_score_loss = loss_fn(fake_score=fake_score_ddp, batch=batch, x_g=x_g, tmax=tmax)
-                    fake_score_loss=fake_score_loss.sum().mul(loss_scaling / batch_gpu_total)
+                    if not use_sida:
+                        fake_score_loss = loss_fn(fake_score=fake_score_ddp, batch=batch, x_g=x_g, tmax=tmax)
+                        fake_score_loss=fake_score_loss.sum().mul(loss_scaling / batch_gpu_total)
+                    else:
+                        fake_score_loss, fake_loss_D = loss_fn.fakescore_discriminator_share_encoder_loss(fake_score=fake_score_ddp, batch=batch, \
+                                                                                                           x_g=x_g, real_x_g = real_x_g, tmax=tmax)
+                        fake_score_loss=fake_score_loss.sum().mul(loss_scaling / batch_gpu_total)
+                        fake_loss_D=fake_loss_D.sum().mul(loss_scaling / batch_gpu_total)
                 if is_loss_nan_check(fake_score_loss):
                     dist.print0(f"Skip iteration with NaN loss: {cur_tick} ticks")
                     fake_score_loss = torch.tensor(0.0, device=fake_score_loss.device, requires_grad=True)
@@ -412,12 +419,13 @@ def training_loop(
         for round_idx in range(num_accumulation_rounds):
             # batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
             batch = next(dataset_iterator).to(device)
-            x_1, mask, batch_shape, n, dtype = extract_clean_sample(batch)
+            real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
             batch['nsamples'] = torch.tensor([batch_gpu])
             batch['nres'] = torch.tensor([n])
             mask = mask.to(device)
             batch['mask'] = mask
             train_step = torch.randint(0, len(t_steps), (1,)).item()
+            x_1 = torch.zeros((batch_gpu, n, 3), device=device)
             with misc.ddp_sync(G_ddp, (round_idx == num_accumulation_rounds - 1)):
                 for i, t_step in enumerate(t_steps):
                     # Only compute gradients for the selected time step
@@ -432,9 +440,15 @@ def training_loop(
             # Accumulate gradients for generator     
             with misc.ddp_sync(fake_score_ddp, False):
                 with enable_amp:
-                    G_loss, real_fake_loss, real_G_loss = loss_fn.generator_loss(true_score=true_score, fake_score=fake_score_ddp, batch=batch, \
-                                                                                    x_g=x_g,alpha=alpha,tmax=tmax, network_kwargs=network_kwargs)
-                    G_loss=G_loss.sum().mul(loss_scaling_G / batch_gpu_total)
+                    if not use_sida:
+                        G_loss, real_fake_loss, real_G_loss = loss_fn.generator_loss(true_score=true_score, fake_score=fake_score_ddp, batch=batch, \
+                                                                                        x_g=x_g,alpha=alpha,tmax=tmax, network_kwargs=network_kwargs)
+                        G_loss=G_loss.sum().mul(loss_scaling_G / batch_gpu_total)
+                    else:
+                        G_loss, G_loss_D = loss_fn.generator_share_encoder_loss(true_score=true_score, fake_score=fake_score_ddp, batch=batch, x_g=x_g, \
+                                                                                network_kwargs=network_dtype, alpha=alpha,tmax=tmax)
+                        G_loss=G_loss.sum().mul(loss_scaling_G / batch_gpu_total)
+                        G_loss_D=G_loss_D.sum().mul(loss_scaling_G / batch_gpu_total)
                 if is_loss_nan_check(G_loss):
                     dist.print0(f"Skip iteration with NaN loss: {cur_tick} ticks")
                     G_loss = torch.tensor(0.0, device=G_loss.device, requires_grad=True)

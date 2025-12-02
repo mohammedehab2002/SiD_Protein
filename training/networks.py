@@ -703,7 +703,12 @@ class ProteinaWrapper(torch.nn.Module):
         nn_ag = None
         self.model.configure_inference(cfg, nn_ag=nn_ag)
 
-    def forward(self, batch):
+    def forward(self, batch, return_flag="decoder"):
+        # TODO: implement return_flag logic for adversarial training. 
+        # Need to go into Proteina codebase to add support for extracting encoder outputs.
+        # decoder: default behavior
+        # encoder: return encoder output
+        # encoder_decoder: return both decoder and encoder outputs
         x_1_pred, nn_out = self.model.predict_clean(batch)
         v = xt_dot(x_1_pred, batch["x_t"], batch["t"], batch["mask"])
         x_1_pred = x_1_pred * batch["mask"].unsqueeze(-1)
