@@ -25,4 +25,6 @@ foldseek_tmp/
 *.png
 *.log
 .ipynb_checkpoints/
+*.out
 
+protein_out

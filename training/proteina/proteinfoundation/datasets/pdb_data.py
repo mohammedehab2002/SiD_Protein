@@ -31,7 +31,7 @@ from proteinfoundation.utils.cluster_utils import (
 )
 from proteinfoundation.utils.constants import PDB_TO_OPENFOLD_INDEX_TENSOR
 
-from graphein_utils.graphein_utils import (
+from training.proteina.graphein_utils.graphein_utils import (
     protein_to_pyg, 
     PDBManager,     
     download_pdb_multiprocessing,

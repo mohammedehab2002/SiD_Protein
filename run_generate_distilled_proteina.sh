@@ -11,12 +11,12 @@ fi
 export CUDA_VISIBLE_DEVICES=$GPU_ID
 
 python generate_distilled_proteina.py \
---model_path "checkpoints/16-step-checkpoint.pt" \
+--model_path "checkpoints/8-step-checkpoint.pt" \
 --out_dir protein_out \
 --lengths 50,100,150,200,250 \
---num_batch 10 \
---batch_size 10 \
---nstep 16 \
+--num_batch 5 \
+--batch_size 20 \
+--nstep 8 \
 --noise_scale 0.45 \
 --seed 5 \
 # --conditional # Uncomment this line to perform conditional generation

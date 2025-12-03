@@ -34,7 +34,7 @@ def compute_scTM(opts):
 	# pipeline
     pipeline = Pipeline(inverse_fold_model, fold_model)
     if not os.path.exists("evaluation_cache"):
-        os.mkdir("evaluation_cache")
+        os.makedirs("evaluation_cache", exist_ok=True)
     eval_input_dir = "evaluation_cache/pipeline_output" + str(opts.rank)
     clean_cache_dir(eval_input_dir)
     eval_coords_dir = eval_input_dir + "/coords"
