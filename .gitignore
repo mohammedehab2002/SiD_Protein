@@ -12,6 +12,10 @@ wandb/
 training/proteina/checkpoints/
 results*/
 pretrained_checkpoints/
+.env
+protein_out/
+logs/
+foldseek_tmp/
 
 *.pt
 *.pkl
