@@ -56,6 +56,7 @@ def sample_uniform_rotation(
 
 class Proteina(ModelTrainerBase):
     def __init__(self, cfg_exp, store_dir=None):
+        print(cfg_exp)
         super(Proteina, self).__init__(cfg_exp=cfg_exp, store_dir=store_dir)
         self.save_hyperparameters()
 
@@ -78,6 +79,7 @@ class Proteina(ModelTrainerBase):
             self.motif_factory = SingleMotifFactory(motif_prob=cfg_exp.training.get("motif_prob", 1.0))
 
         # Neural network
+        print(cfg_exp.model.nn)
         self.nn = ProteinTransformerAF3(**cfg_exp.model.nn)
 
         self.nparams = sum(p.numel() for p in self.nn.parameters() if p.requires_grad)

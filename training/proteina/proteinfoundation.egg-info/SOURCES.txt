@@ -1,6 +1,9 @@
 LICENSE
 README.md
 setup.py
+ProteinMPNN/__init__.py
+ProteinMPNN/protein_mpnn_run.py
+ProteinMPNN/protein_mpnn_utils.py
 openfold/__init__.py
 openfold/config.py
 openfold/data/__init__.py

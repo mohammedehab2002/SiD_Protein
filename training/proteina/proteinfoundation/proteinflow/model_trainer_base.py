@@ -16,14 +16,14 @@ import re
 
 from abc import abstractmethod
 from functools import partial
-from typing import List, Literal
+from typing import List, Literal, Dict
 
 import lightning as L
 import numpy as np
 import torch
 from jaxtyping import Bool, Float
 from loguru import logger
-from torch import Dict, Tensor
+from torch import Tensor
 
 from proteinfoundation.utils.ff_utils.pdb_utils import mask_cath_code_by_level
 
@@ -89,6 +89,7 @@ class ModelTrainerBase(L.LightningModule):
     def predict_clean(
         self,
         batch: Dict,
+        return_flag: str = "decoder",
     ):
         """
         Predicts clean samples given noisy ones and time.
@@ -108,8 +109,11 @@ class ModelTrainerBase(L.LightningModule):
                 - For CAflow it returns a tensor of shape [*, n, 3].
             Other things predicted by nn (pair_pred for distogram loss)
         """
-        nn_out = self.nn(batch)  # [*, n, 3]
-        return self._nn_out_to_x_clean(nn_out, batch), nn_out  # [*, n, 3]
+        nn_out = self.nn(batch, return_flag)  # [*, n, 3]
+        if return_flag == "encoder":
+            return nn_out['disc_prob']
+        else:
+            return self._nn_out_to_x_clean(nn_out, batch), nn_out
 
     def predict_clean_n_v_w_guidance(
         self,

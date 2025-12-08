@@ -12,7 +12,7 @@
 # Add the option below to load a checkpoint:
 # Many options are optional, such as --data_stat, which will be computed inside the code if not provided
 # --resume 'protein_experiment/sid-train-runs/proteina_multistep/00000-Proteina_Uncond???/network-snapshot???.pkl'
-python3 -m torch.distributed.run --standalone --nproc_per_node=2 sid_train.py \
+python3 -m torch.distributed.run --standalone --nproc_per_node=1 sid_train.py \
 --alpha 1.0 \
 --t_init 30 \
 --t 400 \
@@ -35,7 +35,7 @@ python3 -m torch.distributed.run --standalone --nproc_per_node=2 sid_train.py \
 --ls 1 \
 --lsg 100 \
 --duration 100 \
---use_sida false \
+--use_sida true \
 --config_path 'proteina/configs/experiment_config/' \
 --config_name 'inference_ucond_200m_notri' \
 --noise_scale 1.0 \

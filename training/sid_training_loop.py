@@ -158,7 +158,7 @@ def training_loop(
     # Dataloader for real data
     if network_kwargs.class_name == 'training.networks.ProteinaWrapper':
         version_base = hydra.__version__
-        config_path = "/home/lyxie/SiD_Protein/training/proteina/configs/datasets_config" # Change this path to your local ABSOLUTE path
+        config_path = os.path.abspath("./training/proteina/configs/datasets_config")
         hydra.initialize_config_dir(config_dir=f"{config_path}/pdb", version_base=version_base)
 
         cfg = hydra.compose(
@@ -183,6 +183,7 @@ def training_loop(
     true_score.eval().requires_grad_(False).to(device)
 
     fake_score = copy.deepcopy(true_score)
+    fake_score.model.nn.add_disc_head(2)
     fake_score.train().requires_grad_(True).to(device)
     G = copy.deepcopy(true_score)
     G.train().requires_grad_(True).to(device)
@@ -446,7 +447,7 @@ def training_loop(
                         G_loss=G_loss.sum().mul(loss_scaling_G / batch_gpu_total)
                     else:
                         G_loss, G_loss_D = loss_fn.generator_share_encoder_loss(true_score=true_score, fake_score=fake_score_ddp, batch=batch, x_g=x_g, \
-                                                                                network_kwargs=network_dtype, alpha=alpha,tmax=tmax)
+                                                                                network_kwargs=network_kwargs, alpha=alpha,tmax=tmax)
                         G_loss=G_loss.sum().mul(loss_scaling_G / batch_gpu_total)
                         G_loss_D=G_loss_D.sum().mul(loss_scaling_G / batch_gpu_total)
                 if is_loss_nan_check(G_loss):
@@ -473,7 +474,8 @@ def training_loop(
                     param_max = p.grad.abs().max().item()
                     G_grad_max = max(fake_grad_max, param_max)
             wandb.log({'train/generator_grad_norm': G_grad_norm ** 0.5, 'train/generator_grad_max': G_grad_max}, step=cur_nimg)
-            wandb.log({'Loss/y_real-y_fake': real_fake_loss, 'Loss/y_real-y': real_G_loss}, step=cur_nimg)
+            if not use_sida:
+                wandb.log({'Loss/y_real-y_fake': real_fake_loss, 'Loss/y_real-y': real_G_loss}, step=cur_nimg)
         torch.nn.utils.clip_grad_norm_(
             G_ddp.parameters(), 1
         )

@@ -7,9 +7,9 @@
 from proteinfoundation.utils.coors_utils import ang_to_nm, trans_nm_to_atom37
 import torch
 from jaxtyping import Bool, Float
-from torch import Dict, Tensor
+from torch import Tensor
 from tqdm import tqdm
-from typing import Callable, List, Literal, Optional, Tuple
+from typing import Callable, List, Literal, Optional, Tuple, Dict
 from scipy.spatial.transform import Rotation
 from math import prod
 

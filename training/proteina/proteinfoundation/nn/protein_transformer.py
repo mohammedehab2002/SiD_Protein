@@ -476,6 +476,7 @@ class ProteinTransformerAF3(torch.nn.Module):
         self.num_buckets_predict_pair = kwargs.get(
             "num_buckets_predict_pair", None
         )
+        self.kwargs = kwargs
 
         # Registers
         self.num_registers = kwargs.get("num_registers", None)
@@ -573,6 +574,27 @@ class ProteinTransformerAF3(torch.nn.Module):
             torch.nn.Linear(kwargs["token_dim"], 3, bias=False),
         )
 
+        self.disc_nlayers = 0
+
+    def add_disc_head(self, disc_nlayers):
+        self.disc_nlayers = disc_nlayers
+        self.disc_head = torch.nn.ModuleList(
+            [
+                MultiheadAttnAndTransition(
+                    dim_token=self.kwargs["token_dim"],
+                    dim_pair=self.kwargs["pair_repr_dim"],
+                    nheads=self.kwargs["nheads"],
+                    dim_cond=self.kwargs["dim_cond"],
+                    residual_mha=self.kwargs["residual_mha"],
+                    residual_transition=self.kwargs["residual_transition"],
+                    parallel_mha_transition=self.kwargs["parallel_mha_transition"],
+                    use_attn_pair_bias=self.kwargs["use_attn_pair_bias"],
+                    use_qkln=self.use_qkln,
+                )
+                for _ in range(self.disc_nlayers)
+            ]
+        )
+
     def _extend_w_registers(self, seqs, pair, mask, cond_seq):
         """
         Extends the sequence representation, pair representation, mask and indices with registers.
@@ -640,7 +662,7 @@ class ProteinTransformerAF3(torch.nn.Module):
         r = self.num_registers
         return seqs[:, r:, :], pair[:, r:, r:, :], mask[:, r:]
 
-    def forward(self, batch_nn: Dict[str, torch.Tensor]):
+    def forward(self, batch_nn: Dict[str, torch.Tensor], return_flag="decoder"):
         """
         Runs the network.
 
@@ -691,19 +713,37 @@ class ProteinTransformerAF3(torch.nn.Module):
                         pair_rep = self.pair_update_layers[i](
                             seqs, pair_rep, mask
                         )  # [b, n, n, pair_dim]
+            
+            if i == self.nlayers - self.disc_nlayers:
+                disc_seqs = seqs.clone()
+                disc_pair_rep = pair_rep.clone()
+                disc_mask = mask.clone()
+                if "decoder" not in return_flag:
+                    break
 
-        # Undo registers
-        seqs, pair_rep, mask = self._undo_registers(seqs, pair_rep, mask)
-
-        # Get final coordinates
-        final_coors = self.coors_3d_decoder(seqs) * mask[..., None]  # [b, n, 3]
         nn_out = {}
-        if self.update_pair_repr and self.num_buckets_predict_pair is not None:
-            pair_pred = self.pair_head_prediction(pair_rep)
-            final_coors = (
-                final_coors + torch.mean(pair_pred) * 0.0
-            )  # Does not affect loss but pytorch does not complain for unused params
-            final_coors = final_coors * mask[..., None]
-            nn_out["pair_pred"] = pair_pred
-        nn_out["coors_pred"] = final_coors
+        
+        if "decoder" in return_flag:
+            # Undo registers
+            seqs, pair_rep, mask = self._undo_registers(seqs, pair_rep, mask)
+
+            # Get final coordinates
+            final_coors = self.coors_3d_decoder(seqs) * mask[..., None]  # [b, n, 3]
+            if self.update_pair_repr and self.num_buckets_predict_pair is not None:
+                pair_pred = self.pair_head_prediction(pair_rep)
+                final_coors = (
+                    final_coors + torch.mean(pair_pred) * 0.0
+                )  # Does not affect loss but pytorch does not complain for unused params
+                final_coors = final_coors * mask[..., None]
+                nn_out["pair_pred"] = pair_pred
+            nn_out["coors_pred"] = final_coors
+        if "encoder" in return_flag:
+            for i in range(self.disc_nlayers):
+                disc_seqs = self.disc_head[i](
+                    disc_seqs, disc_pair_rep, c, disc_mask
+                )  # [b, n, token_dim]
+            # Undo registers
+            disc_seqs, _, disc_mask = self._undo_registers(disc_seqs, disc_pair_rep, disc_mask)
+            nn_out["disc_prob"] = torch.sigmoid((disc_seqs * disc_mask[..., None]).sum(dim=(1,2)) / (disc_mask.sum(dim=1) * self.token_dim))
+            
         return nn_out

@@ -699,7 +699,7 @@ class ProteinaWrapper(torch.nn.Module):
         ckpt_path = cfg.ckpt_path
         ckpt_file = os.path.join(ckpt_path, cfg.ckpt_name)
         assert os.path.exists(ckpt_file), f"Not a valid checkpoint {ckpt_file}"
-        self.model = Proteina.load_from_checkpoint(ckpt_file)
+        self.model = Proteina.load_from_checkpoint(ckpt_file, strict=False)
         nn_ag = None
         self.model.configure_inference(cfg, nn_ag=nn_ag)
 
@@ -709,7 +709,10 @@ class ProteinaWrapper(torch.nn.Module):
         # decoder: default behavior
         # encoder: return encoder output
         # encoder_decoder: return both decoder and encoder outputs
-        x_1_pred, nn_out = self.model.predict_clean(batch)
-        v = xt_dot(x_1_pred, batch["x_t"], batch["t"], batch["mask"])
-        x_1_pred = x_1_pred * batch["mask"].unsqueeze(-1)
-        return x_1_pred, v
+        if return_flag == "encoder":
+            return self.model.predict_clean(batch, return_flag)
+        else:
+            x_1_pred, nn_out = self.model.predict_clean(batch, return_flag)
+            v = xt_dot(x_1_pred, batch["x_t"], batch["t"], batch["mask"])
+            x_1_pred = x_1_pred * batch["mask"].unsqueeze(-1)
+            return (x_1_pred, (v if return_flag == "decoder" else nn_out["disc_prob"]))
