@@ -159,7 +159,7 @@ def training_loop(
     if network_kwargs.class_name == 'training.networks.ProteinaWrapper':
         version_base = hydra.__version__
         config_path = os.path.abspath("./training/proteina/configs/datasets_config")
-        hydra.initialize_config_dir(config_dir=f"{config_path}/pdb", version_base=version_base)
+        hydra.initialize_config_dir(config_dir=f"{config_path}/broteina", version_base=version_base)
 
         cfg = hydra.compose(
             config_name="pdb_train",
@@ -183,7 +183,8 @@ def training_loop(
     true_score.eval().requires_grad_(False).to(device)
 
     fake_score = copy.deepcopy(true_score)
-    fake_score.model.nn.add_disc_head(2)
+    if use_sida:
+        fake_score.model.nn.add_disc_head(2)
     fake_score.train().requires_grad_(True).to(device)
     G = copy.deepcopy(true_score)
     G.train().requires_grad_(True).to(device)
