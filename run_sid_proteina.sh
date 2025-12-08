@@ -12,13 +12,13 @@
 # Add the option below to load a checkpoint:
 # Many options are optional, such as --data_stat, which will be computed inside the code if not provided
 # --resume 'protein_experiment/sid-train-runs/proteina_multistep/00000-Proteina_Uncond???/network-snapshot???.pkl'
-python3 -m torch.distributed.run --standalone --nproc_per_node=1 sid_train.py \
+torchrun --standalone --nproc_per_node=8 sid_train.py \
 --alpha 1.0 \
 --t_init 30 \
 --t 400 \
 --tmax 0.98 \
 --batch 4096 \
---batch-gpu 2 \
+--batch-gpu 4 \
 --eval_batch 5 \
 --outdir 'protein_experiment/sid-train-runs/proteina_multistep' \
 --data 'pdb_raw/cath_label_mapping.pt' \
@@ -37,8 +37,8 @@ python3 -m torch.distributed.run --standalone --nproc_per_node=1 sid_train.py \
 --duration 100 \
 --use_sida true \
 --config_path 'proteina/configs/experiment_config/' \
---config_name 'inference_ucond_200m_notri' \
+--config_name 'broteina_distillation' \
 --noise_scale 1.0 \
 --nstep 1 \
 --min_n_res 50 \
---max_n_res 256 \
+--max_n_res 250 \
