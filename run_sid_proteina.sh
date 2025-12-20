@@ -23,7 +23,7 @@ torchrun --standalone --nproc_per_node=2 sid_train.py \
 --t 400 \
 --tmax 0.98 \
 --batch 4096 \
---batch-gpu 4 \
+--batch-gpu 2 \
 --eval_batch 5 \
 --outdir 'protein_experiment/sid-train-runs/proteina_multistep' \
 --data 'pdb_raw/cath_label_mapping.pt' \
@@ -40,7 +40,7 @@ torchrun --standalone --nproc_per_node=2 sid_train.py \
 --ls 1 \
 --lsg 100 \
 --duration 100 \
---use_sida false \
+--use_sida true \
 --config_path 'proteina/configs/experiment_config/' \
 --config_name 'inference_ucond_200m_notri' \
 --noise_scale 1.0 \

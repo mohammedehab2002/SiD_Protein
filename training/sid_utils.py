@@ -16,12 +16,7 @@ def sample_t(t_step, nstep, max_t, batch_shape, device):
 
 def sample_training_parameters(network_kwargs, nstep, batch_gpu, device):
     # Randomly sample lengths for proteins in batch
-    # lengths = torch.randint(network_kwargs.min_n_res, network_kwargs.max_n_res + 1, (batch_gpu,))
-    probabilities = torch.linspace(0.2, 1.0, steps=network_kwargs.max_n_res - network_kwargs.min_n_res + 1)
-    probabilities = probabilities / probabilities.sum()
-    categories = torch.arange(network_kwargs.min_n_res, network_kwargs.max_n_res + 1)
-    dist = torch.distributions.Categorical(probabilities)
-    lengths = categories[dist.sample((batch_gpu,))]
+    lengths = torch.randint(network_kwargs.min_n_res, network_kwargs.max_n_res + 1, (batch_gpu,))
     # Create mask based on the lengths. Dimension : (batch_size, max_length)
     n = lengths.max().item()
     range_vector = torch.arange(n).unsqueeze(0)
