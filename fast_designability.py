@@ -21,9 +21,6 @@ from training.proteina.proteinfoundation.utils.align_utils.align_utils import ka
 from transformers import AutoTokenizer, EsmForProteinFolding
 
 from transformers.models.esm.openfold_utils.feats import atom14_to_atom37
-from training.proteina.evaluations.evaluation_utils import parse_pdb_file
-
-import click
 
 def get_args():
     
@@ -117,7 +114,7 @@ class Designability:
         hidden_dim = 128
         num_layers = 3
 
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         noise_level_print = checkpoint['noise_level']
         model = ProteinMPNN(ca_only=args.ca_only, num_letters=21, node_features=hidden_dim, edge_features=hidden_dim, hidden_dim=hidden_dim, num_encoder_layers=num_layers, num_decoder_layers=num_layers, augment_eps=args.backbone_noise, k_neighbors=checkpoint['num_edges'])
         model.to(device)
@@ -135,12 +132,11 @@ class Designability:
 
         self.args = args
 
-        local_dir = "/home/gridsan/mmorsy/proteins_project/models--facebook--esmfold_v1/snapshots/75a3841ee059df2bf4d56688166c8fb459ddd97a"
         self.tokenizer = AutoTokenizer.from_pretrained(
-            local_dir, local_files_only=True
+            "facebook/esmfold_v1"
         )
         self.esm_model = EsmForProteinFolding.from_pretrained(
-            local_dir, local_files_only=True
+            "facebook/esmfold_v1"
         ).to(device)
 
         print("Loaded ESM-Fold model for structure prediction.")
@@ -259,43 +255,3 @@ class Designability:
             return scores, scores[:, None, None] * log_prob_grads + rmsd_grad
 
         return scores
-
-def parse_int_list(s):
-    # Target protein lengths should be a comma separated list of integers
-    int_list = [int(s.strip()) for s in s.split(',')]
-    return int_list
-
-@click.command()
-@click.option('--gpu_num', default=0, help='GPU number to use')
-@click.option("--lengths", type=str, default="50,100,150,200,250", help="Comma separated list of protein lengths to generate.")
-def main(gpu_num, lengths):
-
-    # designability = Designability('cuda')
-
-    lengths = parse_int_list(lengths)
-
-    dir_root = f"./protein_out/{gpu_num}/pdbs"
-
-    for dir in os.listdir(dir_root):
-
-        subdir = os.path.join(dir_root, dir)
-
-        for length in lengths:
-
-            proteins = []
-
-            for name in sorted(os.listdir(subdir)):
-                if name.startswith(str(length)):
-                    full = os.path.join(subdir, name)
-                    # Load the pdb
-                    protein = parse_pdb_file(full)['ca_coords']
-                    proteins.append(torch.tensor(protein))
-            
-            proteins = torch.stack(proteins)
-            print(proteins.shape)
-
-    # scores = designability.scRMSD(proteins, return_grad=False)
-    # Put in a CSV
-
-if __name__ == "__main__":
-    main()

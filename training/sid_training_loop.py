@@ -183,7 +183,8 @@ def training_loop(
     true_score.eval().requires_grad_(False).to(device)
 
     fake_score = copy.deepcopy(true_score)
-    fake_score.model.nn.add_disc_head(2)
+    if use_sida:
+        fake_score.model.nn.add_disc_head(2)
     fake_score.train().requires_grad_(True).to(device)
     G = copy.deepcopy(true_score)
     G.train().requires_grad_(True).to(device)
@@ -327,15 +328,17 @@ def training_loop(
         fake_score_optimizer.zero_grad(set_to_none=True)
 
         for round_idx in range(num_accumulation_rounds):
-            batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
-            batch = next(dataset_iterator).to(device)
-            real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
-            batch['nsamples'] = torch.tensor([batch_gpu])
-            batch['nres'] = torch.tensor([n])
-            mask = mask.to(device)
-            batch['mask'] = mask
-            train_step = torch.randint(0, len(t_steps), (1,)).item()
-            x_1 = torch.zeros((batch_gpu, n, 3), device=device)
+            if not use_sida:
+                batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+            else:
+                batch = next(dataset_iterator).to(device)
+                real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
+                batch['nsamples'] = torch.tensor([batch_gpu])
+                batch['nres'] = torch.tensor([n])
+                mask = mask.to(device)
+                batch['mask'] = mask
+                train_step = torch.randint(0, len(t_steps), (1,)).item()
+                x_1 = torch.zeros((batch_gpu, n, 3), device=device)
             with misc.ddp_sync(G_ddp, False):
                 for i, t_step in enumerate(t_steps):
                     # Only compute gradients for the selected time step
@@ -418,15 +421,17 @@ def training_loop(
         g_optimizer.zero_grad(set_to_none=True)
 
         for round_idx in range(num_accumulation_rounds):
-            # batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
-            batch = next(dataset_iterator).to(device)
-            real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
-            batch['nsamples'] = torch.tensor([batch_gpu])
-            batch['nres'] = torch.tensor([n])
-            mask = mask.to(device)
-            batch['mask'] = mask
-            train_step = torch.randint(0, len(t_steps), (1,)).item()
-            x_1 = torch.zeros((batch_gpu, n, 3), device=device)
+            if not use_sida:
+                batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+            else:
+                batch = next(dataset_iterator).to(device)
+                real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
+                batch['nsamples'] = torch.tensor([batch_gpu])
+                batch['nres'] = torch.tensor([n])
+                mask = mask.to(device)
+                batch['mask'] = mask
+                train_step = torch.randint(0, len(t_steps), (1,)).item()
+                x_1 = torch.zeros((batch_gpu, n, 3), device=device)
             with misc.ddp_sync(G_ddp, (round_idx == num_accumulation_rounds - 1)):
                 for i, t_step in enumerate(t_steps):
                     # Only compute gradients for the selected time step
