@@ -24,3 +24,5 @@ pretrained_checkpoints/
 *.out
 
 protein_out
+.env
+additional_files/*
