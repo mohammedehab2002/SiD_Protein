@@ -5,6 +5,7 @@
 # export NCCL_DEBUG=INFO
 # export TORCH_DISTRIBUTED_DEBUG=DETAIL
 # export NCCL_P2P_DISABLE=1
+export NCCL_IB_DISABLE=1
 
 # Decrease --batch-gpu to reduce memory consumption
 
@@ -19,7 +20,7 @@ torchrun --standalone --nproc_per_node=8 sid_train.py \
 --tmax 0.98 \
 --batch 4096 \
 --batch-gpu 4 \
---eval_batch 5 \
+--eval_batch 2 \
 --outdir 'protein_experiment/sid-train-runs/proteina_multistep' \
 --data 'pdb_raw/cath_label_mapping.pt' \
 --arch proteina \

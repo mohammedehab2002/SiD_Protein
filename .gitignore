@@ -26,3 +26,4 @@ pretrained_checkpoints/
 protein_out
 .env
 additional_files/*
+run_sid_proteina.sh
