@@ -306,6 +306,8 @@ def training_loop(
         if cur_nimg > 400000 * reset_counter:
             reset_counter += 1
             fake_score = copy.deepcopy(true_score)
+            if use_sida:
+                fake_score.model.nn.add_disc_head(2)
             fake_score.train().requires_grad_(True).to(device)
             fake_score_ddp = torch.nn.parallel.DistributedDataParallel(fake_score, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
             fake_score_optimizer = dnnlib.util.construct_class_by_name(params=fake_score.parameters(), **fake_score_optimizer_kwargs) # subclass of torch.optim.Optimizer
