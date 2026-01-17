@@ -89,6 +89,7 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--seed',          help='Random seed  [default: random]', metavar='INT',              type=int)
 @click.option('--transfer',      help='Transfer learning from network pickle', metavar='PKL|URL',   type=str)
 @click.option('--resume',        help='Resume from previous training state', metavar='PT',          type=str)
+@click.option('--resume_pkl',        help='Resume from previous checkpoint', metavar='PKL',          type=str)
 @click.option('-n', '--dry-run', help='Print training options and exit',                            is_flag=True)
 @click.option('--metrics',       help='Comma-separated list or "none" [default: fid50k_full]',      type=CommaSeparatedList())
 @click.option('--edm_model',     help='edm_model', type=str)
@@ -245,6 +246,7 @@ Pretrained Diffusion Models for One-Step Generation".
         if not match or not os.path.isfile(opts.resume):
             raise click.ClickException('--resume must point to training-state-*.pt from a previous training run')
         c.resume_kimg = int(match.group(1))
+        c.resume_pkl = opts.resume_pkl
 
     # Description string.
     cond_str = 'cond' if c.dataset_kwargs.use_labels else 'uncond'

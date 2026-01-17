@@ -19,7 +19,7 @@ torchrun --standalone --nproc_per_node=8 sid_train.py \
 --t 400 \
 --tmax 0.98 \
 --batch 4096 \
---batch-gpu 4 \
+--batch-gpu 8 \
 --eval_batch 2 \
 --outdir 'protein_experiment/sid-train-runs/proteina_multistep' \
 --data 'pdb_raw/cath_label_mapping.pt' \
@@ -28,7 +28,7 @@ torchrun --standalone --nproc_per_node=8 sid_train.py \
 --metrics sctm \
 --tick 5 \
 --snap 2 \
---dump 100 \
+--dump 12 \
 --lr 1e-4 \
 --glr 5e-5 \
 --g_beta1 0.9 \
@@ -39,6 +39,8 @@ torchrun --standalone --nproc_per_node=8 sid_train.py \
 --use_sida true \
 --config_path 'proteina/configs/experiment_config/' \
 --config_name 'broteina_distillation' \
+--resume_pkl 'protein_experiment/sid-train-runs/proteina_multistep/00031-uncond-proteina-glr5e-05-lr0.0001-initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/network-snapshot-1.000000-002006.pkl' \
+--resume 'protein_experiment/sid-train-runs/proteina_multistep/00031-uncond-proteina-glr5e-05-lr0.0001-initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/training-state-002006.pt' \
 --noise_scale 1.0 \
 --nstep 1 \
 --min_n_res 50 \
