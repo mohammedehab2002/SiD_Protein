@@ -9,11 +9,17 @@ CONDA_ENV = "sid_protein_env"
 SCRIPT = "generate_distilled_proteina_designability.py"
 
 MODEL_PATH = (
-    "/homes/kasram/broteina/SiD_Protein/protein_experiment/sid-train-runs/"
-    "proteina_multistep/00028-uncond-proteina-glr5e-05-lr0.0001-"
-    "initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/"
+    # "/homes/kasram/broteina/SiD_Protein/protein_experiment/sid-train-runs/"
+    # "proteina_multistep/00028-uncond-proteina-glr5e-05-lr0.0001-"
+    # "initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/"
     # "network-snapshot-1.000000-001052.pkl"
-    "network-snapshot-1.000000-000954.pkl"
+    # "network-snapshot-1.000000-000954.pkl"
+    # "network-snapshot-1.000000-001265.pkl"
+
+    "/homes/kasram/broteina/SiD_Protein/protein_experiment/sid-train-runs/"
+    "proteina_multistep/00031-uncond-proteina-glr5e-05-lr0.0001-"
+    "initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/"
+    "network-snapshot-1.000000-002006.pkl"
 )
 
 OUT_DIR = "design_eval/"
@@ -35,7 +41,7 @@ def tmux_session_exists(name: str) -> bool:
     )
 
 
-def _count_entries(dir_path: Path) -> int:
+def _count_entries(dir_path: Path, length: int) -> int:
     """
     Count entries exactly like:
       ls -1A <dir> | wc -l
@@ -47,8 +53,10 @@ def _count_entries(dir_path: Path) -> int:
     if not p.exists() or not p.is_dir():
         return 0
 
-    cmd = f"ls -1A {str(p)!s} 2>/dev/null | wc -l"
-    # cmd = f'ls -1A "{p}" 2>/dev/null | grep -E "^150_" | wc -l'
+    if length == 0:
+        cmd = f"ls -1A {str(p)!s} 2>/dev/null | wc -l"
+    else:
+        cmd = f'ls -1A "{p}" 2>/dev/null | grep -E "^{str(length)}_" | wc -l'
     out = subprocess.check_output(["bash", "-lc", cmd], text=True).strip()
     try:
         return int(out)
@@ -61,13 +69,21 @@ def count(model_path: str = MODEL_PATH) -> None:
     model_name = mp.name
     base = Path(PROJECT_DIR) / OUT_DIR / model_name / "pdbs"
 
-    designable = _count_entries(base / "designable")
-    undesignable = _count_entries(base / "undesignable")
-    denom = designable + undesignable
-    designability = (designable / denom) if denom > 0 else 0.0
+    for i in range(0, 6):
+        length = i * 50
 
-    print(f"Sampled a total of {denom} proteins.")
-    print(f"Designability is: {designability}")
+        designable = _count_entries(base / "designable", length)
+        undesignable = _count_entries(base / "undesignable", length)
+        denom = designable + undesignable
+        designability = (designable / denom) if denom > 0 else 0.0
+
+        if i != 0:
+            print()
+            print("\t", end="")
+        print(f"Sampled a total of {denom} proteins.")
+        if i != 0:
+            print("\t", end="")
+        print(f"Designability is: {designability}")
 
 
 def main() -> int:
