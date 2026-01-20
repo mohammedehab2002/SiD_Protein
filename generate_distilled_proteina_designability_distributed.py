@@ -9,21 +9,33 @@ CONDA_ENV = "sid_protein_env"
 SCRIPT = "generate_distilled_proteina_designability.py"
 
 MODEL_PATH = (
-    # "/homes/kasram/broteina/SiD_Protein/protein_experiment/sid-train-runs/"
-    # "proteina_multistep/00028-uncond-proteina-glr5e-05-lr0.0001-"
-    # "initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/"
-    # "network-snapshot-1.000000-001052.pkl"
-    # "network-snapshot-1.000000-000954.pkl"
-    # "network-snapshot-1.000000-001265.pkl"
-
     "/homes/kasram/broteina/SiD_Protein/protein_experiment/sid-train-runs/"
-    "proteina_multistep/00031-uncond-proteina-glr5e-05-lr0.0001-"
+    "proteina_multistep/00028-uncond-proteina-glr5e-05-lr0.0001-"
     "initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/"
-    "network-snapshot-1.000000-002006.pkl"
+    # "network-snapshot-1.000000-001052.pkl"
+    # "network-snapshot-1.000000-000397.pkl"
+    # "network-snapshot-1.000000-000954.pkl"
+    "network-snapshot-1.000000-001265.pkl"
+
+    # "/homes/kasram/broteina/SiD_Protein/protein_experiment/sid-train-runs/"
+    # "proteina_multistep/00031-uncond-proteina-glr5e-05-lr0.0001-"
+    # "initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/"
+    # "network-snapshot-1.000000-002006.pkl"
+
+    # "/homes/kasram/broteina/SiD_Protein_scratch/protein_experiment/sid-train-runs/"
+    # "proteina_multistep/00002-uncond-proteina-glr5e-05-lr0.0001-"
+    # "initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep10/"
+    # "network-snapshot-1.000000-000233.pkl"
+
+    # "/homes/kasram/broteina/SiD_Protein/protein_experiment/sid-train-runs/"
+    # "proteina_multistep/00035-uncond-proteina-glr5e-05-lr0.0001-"
+    # "initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/"
+    # "network-snapshot-1.000000-002800.pkl"
 )
 
 OUT_DIR = "design_eval/"
 NUM_BATCH = 4
+NOISE_SCALE = 1
 
 
 def run(cmd: list[str]) -> None:
@@ -67,7 +79,8 @@ def _count_entries(dir_path: Path, length: int) -> int:
 def count(model_path: str = MODEL_PATH) -> None:
     mp = Path(model_path)
     model_name = mp.name
-    base = Path(PROJECT_DIR) / OUT_DIR / model_name / "pdbs"
+    noise_scale_identifier = f"_sc_{str(NOISE_SCALE)}" if NOISE_SCALE != 1.0 else ""
+    base = Path(PROJECT_DIR) / OUT_DIR / (model_name + noise_scale_identifier) / "pdbs"
 
     for i in range(0, 6):
         length = i * 50
@@ -116,6 +129,7 @@ def main() -> int:
             f"--model_path {MODEL_PATH} "
             f"--out_dir {OUT_DIR} "
             f"--num_batch {NUM_BATCH} "
+            f"--noise_scale {NOISE_SCALE} "
             f"--seed {i}"
             f"; echo '[{session}] finished'; exec bash"
         )

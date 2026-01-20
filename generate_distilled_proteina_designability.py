@@ -46,7 +46,8 @@ def main(model_path, out_dir, lengths, conditional, num_batch, batch_size, seed,
     seed_everything(seed)
     device = torch.device(f'cuda' if torch.cuda.is_available() else 'cpu')
     lengths = parse_int_list(lengths)
-    out_dir = os.path.join(out_dir, model_path.split('/')[-1].replace('.pt',''))
+    noise_scale_identifier = f"_sc_{str(noise_scale)}" if noise_scale != 1.0 else ""
+    out_dir = os.path.join(out_dir, model_path.split('/')[-1].replace('.pt','') + noise_scale_identifier)
     os.makedirs(out_dir, exist_ok=True)
 
     designability = Designability('cuda')
@@ -92,7 +93,7 @@ def generate_unconditional(out_dir, G, lengths, num_batch, batch_size, device, n
 
             # Generate structures based on the number of sampling steps
             if nstep is None or nstep == 1:
-                x_g = generate_onestep(G, batch, batch_shape, n, mask, x_g, device)
+                x_g = generate_onestep(G, batch, batch_shape, n, mask, x_g, noise_scale, device)
             else:
                 x_g = generate_multistep(G, batch, batch_shape, n, mask, x_g, nstep, noise_scale, device)
             save_structures(x_g, f"{eval_coords_dir}", f"{eval_pdb_dir}", n, niter, designability=designability, seed=seed)
@@ -135,7 +136,7 @@ def generate_conditional(out_dir, config_name, G, num_batch, batch_size, device,
             x_g = torch.zeros((batch_shape, n, 3), device=device, dtype=torch.float32)
             # Generate structures based on the number of sampling steps
             if nstep is None or nstep == 1:
-                x_g = generate_onestep(G, batch, batch_shape, n, mask, x_g, device)
+                x_g = generate_onestep(G, batch, batch_shape, n, mask, x_g, noise_scale, device)
             else:
                 x_g = generate_multistep(G, batch, batch_shape, n, mask, x_g, nstep, noise_scale, device)
             save_structures(x_g, eval_coords_dir, eval_pdb_dir, n, niter, masked_cath_code, sampled_cath_codes)
@@ -151,14 +152,14 @@ def generate_conditional(out_dir, config_name, G, num_batch, batch_size, device,
 
     return eval_input_dir
 
-def generate_onestep(G, batch, batch_shape, n, mask, x_g, device):
+def generate_onestep(G, batch, batch_shape, n, mask, x_g, noise_scale, device):
     t_init = 0.37
     t = t_init * torch.ones(batch_shape, device=device)
     batch["t"] = t
     x_0 = sample_reference(
         n=n, shape=(batch_shape,), device=device, mask=mask
     )
-    x_t = interpolate(x_0, x_g, t)
+    x_t = interpolate(noise_scale * x_0, x_g, t)
     batch["x_t"] = x_t
     x_g, _ = G(batch)
     return x_g
