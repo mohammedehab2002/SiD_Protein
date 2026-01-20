@@ -27,4 +27,5 @@ pretrained_checkpoints/
 protein_out
 .env
 additional_files/*
+design_eval/*
 run_sid_proteina.sh
