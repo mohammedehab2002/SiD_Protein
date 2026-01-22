@@ -28,4 +28,5 @@ protein_out
 .env
 additional_files/*
 design_eval/*
+foldseek_tmp/*
 run_sid_proteina.sh
