@@ -28,6 +28,7 @@ from training.networks import ProteinaWrapper
 from training.proteina.fast_designability import Designability
 
 import pickle as pkl
+import fcntl
 
 
 @click.command()
@@ -182,6 +183,8 @@ def generate_multistep(G, batch, batch_shape, n, mask, x_g, nstep, noise_scale, 
 
 def save_structures(x_g, eval_coords_dir, eval_pdb_dir, n, niter, cath_code=None, sampled_cath_codes=None, designability=None, seed=None):
     scores = designability.scRMSD(nm_to_ang(x_g.detach()))
+    csv_data_batch = []
+    
     for sample_idx in range(x_g.shape[0]):
         coords = x_g[sample_idx].detach()
         coords_atom37 = samples_to_atom37(coords)
@@ -192,13 +195,44 @@ def save_structures(x_g, eval_coords_dir, eval_pdb_dir, n, niter, cath_code=None
         else:
             filename = f'{n}_{niter}_{sample_idx}' + cath_code[0].replace('.', '_')
         np.savetxt(os.path.join(eval_coords_dir, filename + '.npy'), coords, fmt='%.3f', delimiter=',')
+        
+        score_val = scores[sample_idx].item() if hasattr(scores[sample_idx], 'item') else scores[sample_idx]
+        
         write_prot_to_pdb(coords_atom37.cpu().numpy(), 
-                        os.path.join(os.path.join(eval_pdb_dir, "designable" if scores[sample_idx] < 2 else "undesignable"), filename + '.pdb'), 
+                        os.path.join(os.path.join(eval_pdb_dir, "designable" if score_val < 2 else "undesignable"), filename + '.pdb'), 
                         overwrite=True,
                         no_indexing=True
         )
+        
         if sampled_cath_codes is not None:
             sampled_cath_codes[f'{n}_{niter}_{sample_idx}'] = cath_code
+            
+        csv_data_batch.append([n, niter, sample_idx, seed, score_val])
+
+    csv_path = os.path.abspath(os.path.join(eval_pdb_dir, os.pardir, "scRMSD_scores.csv"))
+    
+    with open(csv_path, 'a', newline='') as f:
+        # 1. Acquire Exclusive Lock (blocks other GPUs until released)
+        fcntl.flock(f, fcntl.LOCK_EX)
+        
+        try:
+            writer = csv.writer(f)
+            
+            # 2. Check if file is empty to write header
+            # We check position because in 'a' mode, if file is new, pos is 0
+            if f.tell() == 0:
+                writer.writerow(['n', 'niter', 'sample_idx', 'seed', 'scRMSD'])
+            
+            # 3. Write the batch
+            writer.writerows(csv_data_batch)
+            
+            # Ensure data is physically written to disk
+            f.flush()
+            os.fsync(f.fileno())
+            
+        finally:
+            # 4. Release Lock safely
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 def create_directories(eval_input_dir):
     #if os.path.exists(eval_input_dir):

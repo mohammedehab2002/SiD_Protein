@@ -18,7 +18,7 @@ if __name__ == "__main__":
     os.makedirs("foldseek_tmp", exist_ok=True)
     if os.path.exists(f"foldseek_tmp/{ckpt_name}"):
         shutil.rmtree(f"foldseek_tmp/{ckpt_name}")
-    subprocess.run(f"foldseek easy-cluster design_eval/{ckpt_name}/pdbs/designable foldseek_tmp/{ckpt_name}/res foldseek_tmp/{ckpt_name} --alignment-type 1 --cov-mode 0 --min-seq-id 0 --tmscore-threshold 0.5", shell=True)
+    subprocess.run(f"foldseek easy-cluster design_eval/{ckpt_name}/pdbs/designable foldseek_tmp/{ckpt_name}/res foldseek_tmp/{ckpt_name} --alignment-type 1 --cov-mode 0 --min-seq-id 0 --tmscore-threshold 0.5", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 
     df = pd.read_csv(f"foldseek_tmp/{ckpt_name}/res_cluster.tsv", sep="\t", header=None, names=["cluster", "protein"])
     print("Diversity:", len(df["cluster"].unique()) / len(df))
