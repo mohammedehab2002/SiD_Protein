@@ -109,6 +109,9 @@ class ModelTrainerBase(L.LightningModule):
                 - For CAflow it returns a tensor of shape [*, n, 3].
             Other things predicted by nn (pair_pred for distogram loss)
         """
+        if self.motif_conditioning:
+            batch.update(self.motif_factory(batch, zeroes = True))
+            batch["motif_mask"] = batch["fixed_sequence_mask"]
         nn_out = self.nn(batch, return_flag)  # [*, n, 3]
         if return_flag == "encoder":
             return nn_out['disc_prob']

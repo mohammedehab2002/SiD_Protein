@@ -3,7 +3,7 @@ defaults:
   - _self_
 
 run_name_: broteina_distillation
-ckpt_name: finetuned_designables_epoch=00000000_step=000000002000.ckpt
+ckpt_name: proteina_v1.7_DFS_60M_notri_motif_scaffolding.ckpt
 
 self_cond: True
 

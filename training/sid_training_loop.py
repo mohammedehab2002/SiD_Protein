@@ -10,6 +10,7 @@ Pretrained Diffusion Models for One-Step Generation"."""
 
 """Main training loop."""
 
+import hydra
 import os
 import time
 import copy
@@ -20,7 +21,6 @@ import numpy as np
 import torch
 import dnnlib
 import wandb
-import hydra
 from contextlib import nullcontext
 from functools import partial
 from torch.amp import autocast, GradScaler
@@ -126,6 +126,7 @@ def training_loop(
     init_sigma          = None,
     data_stat           = None,
     use_sida            = False,
+    motif_conditional   = False,
 ):
     # Initialize.
     load_dotenv()
@@ -156,10 +157,11 @@ def training_loop(
     #     len_cath_code = parse_len_cath_code(cfg)
 
     # Dataloader for real data
-    if network_kwargs.class_name == 'training.networks.ProteinaWrapper':
+    assert(motif_conditional)
+    if network_kwargs.class_name == 'training.networks.ProteinaWrapper' and motif_conditional:
         version_base = hydra.__version__
         config_path = os.path.abspath("./training/proteina/configs/datasets_config")
-        hydra.initialize_config_dir(config_dir=f"{config_path}/broteina", version_base=version_base)
+        hydra.initialize_config_dir(config_dir=f"{config_path}/pdb", version_base=version_base)
 
         cfg = hydra.compose(
             config_name="pdb_train",
@@ -331,7 +333,17 @@ def training_loop(
 
         for round_idx in range(num_accumulation_rounds):
             if not use_sida:
-                batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+                if not motif_conditional:
+                    batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+                else:
+                    batch = next(dataset_iterator).to(device)
+                    real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
+                    batch['nsamples'] = torch.tensor([batch_gpu])
+                    batch['nres'] = torch.tensor([n])
+                    mask = mask.to(device)
+                    batch['mask'] = mask
+                    train_step = torch.randint(0, len(t_steps), (1,)).item()
+                    x_1 = torch.zeros((batch_gpu, n, 3), device=device)
             else:
                 batch = next(dataset_iterator).to(device)
                 real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
@@ -424,7 +436,17 @@ def training_loop(
 
         for round_idx in range(num_accumulation_rounds):
             if not use_sida:
-                batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+                if not motif_conditional:
+                    batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
+                else:
+                    batch = next(dataset_iterator).to(device)
+                    real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
+                    batch['nsamples'] = torch.tensor([batch_gpu])
+                    batch['nres'] = torch.tensor([n])
+                    mask = mask.to(device)
+                    batch['mask'] = mask
+                    train_step = torch.randint(0, len(t_steps), (1,)).item()
+                    x_1 = torch.zeros((batch_gpu, n, 3), device=device)
             else:
                 batch = next(dataset_iterator).to(device)
                 real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)

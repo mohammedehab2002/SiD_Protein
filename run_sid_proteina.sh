@@ -13,13 +13,13 @@ export NCCL_IB_DISABLE=1
 # Add the option below to load a checkpoint:
 # Many options are optional, such as --data_stat, which will be computed inside the code if not provided
 # --resume 'protein_experiment/sid-train-runs/proteina_multistep/00000-Proteina_Uncond???/network-snapshot???.pkl'
-torchrun --standalone --nproc_per_node=8 sid_train.py \
+python -m torch.distributed.run --standalone --nproc_per_node=1 sid_train.py \
 --alpha 1.0 \
 --t_init 30 \
 --t 400 \
 --tmax 0.98 \
 --batch 4096 \
---batch-gpu 8 \
+--batch-gpu 4 \
 --eval_batch 2 \
 --outdir 'protein_experiment/sid-train-runs/proteina_multistep' \
 --data 'pdb_raw/cath_label_mapping.pt' \
@@ -36,12 +36,11 @@ torchrun --standalone --nproc_per_node=8 sid_train.py \
 --ls 1 \
 --lsg 100 \
 --duration 100 \
---use_sida true \
+--use_sida false \
+--motif_conditional true \
 --config_path 'proteina/configs/experiment_config/' \
 --config_name 'broteina_distillation' \
---resume_pkl 'protein_experiment/sid-train-runs/proteina_multistep/00031-uncond-proteina-glr5e-05-lr0.0001-initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/network-snapshot-1.000000-002006.pkl' \
---resume 'protein_experiment/sid-train-runs/proteina_multistep/00031-uncond-proteina-glr5e-05-lr0.0001-initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep1/training-state-002006.pt' \
 --noise_scale 1.0 \
---nstep 1 \
+--nstep 8 \
 --min_n_res 50 \
 --max_n_res 250 \

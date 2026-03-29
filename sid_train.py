@@ -106,6 +106,7 @@ class CommaSeparatedList(click.ParamType):
 @click.option('--glr',           help='Learning rate of fake data generator', metavar='FLOAT',      type=click.FloatRange(min=0, min_open=True), default=1e-5, show_default=True)
 @click.option('--g_beta1',           help='beta_1 of the Adam optimizer for generator', metavar='FLOAT',      type=click.FloatRange(min=0, min_open=False), default=0, show_default=True)
 @click.option('--use_sida',      help='Whether to use SiDA', metavar='BOOL', type=bool, default=False, required=True)
+@click.option('--motif_conditional',      help='Whether to use motif conditioning', metavar='BOOL', type=bool, default=False, required=True)
 @click.option('--t_init',         help='The starting timestep for reverse sampling', metavar='INT',          type=click.IntRange(min=1), default=30, show_default=True)
 @click.option('--t',         help='The ending timestep for reverse sampling', metavar='INT',         type=click.IntRange(min=1), default=400, show_default=True)
 @click.option('--nstep',         help='Number of steps in reverse sampling', metavar='INT',          type=click.IntRange(min=1), default=10, show_default=True)
@@ -217,6 +218,7 @@ Pretrained Diffusion Models for One-Step Generation".
     c.update(alpha=opts.alpha)
     c.update(tmax=opts.tmax)
     c.update(use_sida=opts.use_sida)
+    c.update(motif_conditional=opts.motif_conditional)
     c.update(data_stat=opts.data_stat)
 
     # Random seed.
