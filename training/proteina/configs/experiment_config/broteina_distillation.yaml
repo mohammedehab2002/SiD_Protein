@@ -2,11 +2,17 @@ defaults:
   - inference_base
   - _self_
 
-run_name_: broteina_distillation
-ckpt_name: finetuned_designables_epoch=00000000_step=000000002000.ckpt
+run_name_: neurips_broteina_distillation_selfd
+ckpt_name: selfd_chk_epoch=00000004_step=000000028000.ckpt
 
 self_cond: True
 
 sampling_caflow:
   sampling_mode: sc  # "vf" for ODE sampling, "sc" for SDE sampling
   sc_scale_noise: 0.45  # noise scale, used if sampling_mode == "sc"
+
+wandb:
+  tags:
+    - neurips
+    - 1step
+    - selfd
