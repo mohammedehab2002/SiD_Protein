@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from training.proteina.evaluations.inverse_fold_models.proteinmpnn import ProteinMPNN
 from training.proteina.evaluations.fold_models.esmfold import ESMFold
 from training.proteina.evaluations.pipeline import Pipeline
-from training.proteina.proteina_utils import interpolate, sample_reference, samples_to_atom37
+from training.proteina.proteina_utils import interpolate, sample_reference, samples_to_atom37, extract_clean_sample
 from training.proteina.proteinfoundation.metrics import designability
 from training.proteina.proteinfoundation.utils.coors_utils import nm_to_ang
 from training.sid_utils import generator_step
@@ -54,11 +54,20 @@ def compute_scTM(opts):
     # Randomly sample proteins with 5 different lengths
     for n in torch.randint(opts.network_kwargs.min_n_res, opts.network_kwargs.max_n_res+1, size=(5,)).tolist():
         # Generate batch_size samples of length n unconditionally
-        batch = {'nres': torch.tensor([n]), 'nsamples': torch.tensor([batch_size])}
-        batch_shape = (batch['nsamples'],)
-        mask = torch.ones((batch_size, n), device=device, dtype=torch.bool)
-        batch["mask"] = mask
-        x_g = torch.zeros((batch_size, n, 3), device=device, dtype=torch.float32)    # Start with pure noise
+        if opts.network_kwargs.val_dataloader is not None:
+            batch = next(iter(opts.network_kwargs.val_dataloader)).to(device)
+            real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
+            batch['nsamples'] = torch.tensor([batch_size])
+            batch['nres'] = torch.tensor([n])
+            mask = mask.to(device)
+            batch['mask'] = mask
+            x_g = torch.zeros((batch_size, n, 3), device=device)
+        else:
+            batch = {'nres': torch.tensor([n]), 'nsamples': torch.tensor([batch_size])}
+            batch_shape = (batch['nsamples'],)
+            mask = torch.ones((batch_size, n), device=device, dtype=torch.bool)
+            batch["mask"] = mask
+            x_g = torch.zeros((batch_size, n, 3), device=device, dtype=torch.float32)    # Start with pure noise
 
         # Sampling process along time trajectory defined by t_steps
         for t_step in t_steps:

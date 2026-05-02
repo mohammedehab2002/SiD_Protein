@@ -32,6 +32,7 @@ from dotenv import load_dotenv
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
 import pandas as pd
 import itertools
+from hydra.core.global_hydra import GlobalHydra
 
 from metrics import sid_metric_main as metric_main
 from training.proteina.proteina_utils import interpolate, sample_reference, extract_clean_sample
@@ -207,20 +208,35 @@ def training_loop(
     assert(motif_conditional)
     if network_kwargs.class_name == 'training.networks.ProteinaWrapper' and motif_conditional:
         version_base = hydra.__version__
-        config_path = os.path.abspath("./training/proteina/configs/datasets_config")
-        hydra.initialize_config_dir(config_dir=f"{config_path}/broteina", version_base=version_base)
+        exp_config_dir = os.path.abspath(network_kwargs.config_path)
+        GlobalHydra.instance().clear()
+        with hydra.initialize_config_dir(config_dir=exp_config_dir, version_base=version_base):
+            cfg_exp = hydra.compose(
+                config_name=network_kwargs.config_name,
+                return_hydra_config=True,
+            )
 
-        cfg = hydra.compose(
-            config_name="pdb_train",
-            return_hydra_config=True,
+        dataset_config_subdir = cfg_exp.get("dataset_config_subdir", "pdb")
+        dataset_name = cfg_exp.get("dataset", "pdb_train")
+        dataset_config_dir = os.path.abspath(
+            f"./training/proteina/configs/datasets_config/{dataset_config_subdir}"
         )
+        GlobalHydra.instance().clear()
+        with hydra.initialize_config_dir(config_dir=dataset_config_dir, version_base=version_base):
+            cfg = hydra.compose(
+                config_name=dataset_name,
+                return_hydra_config=True,
+            )
     
         pdb_datamodule = hydra.utils.instantiate(cfg.datamodule)
         pdb_datamodule.prepare_data()
         pdb_datamodule.setup("fit")
         pdb_train_dataloader = pdb_datamodule.train_dataloader()
         dataset_iterator = itertools.cycle(pdb_train_dataloader)
-        print(f'Using ProteinaWrapper dataset with {len(pdb_train_dataloader.dataset)} samples.')
+        print(
+            f"Using ProteinaWrapper dataset '{dataset_name}' from "
+            f"'{dataset_config_subdir}' with {len(pdb_train_dataloader.dataset)} samples."
+        )
         network_kwargs.update({'val_dataloader': itertools.cycle(pdb_datamodule.val_dataloader())})
 
     # Construct network.

@@ -9,7 +9,6 @@
 # its affiliates is strictly prohibited.
 
 
-from calendar import c
 import os
 import random
 import re
@@ -26,6 +25,7 @@ from loguru import logger
 from torch import Tensor
 
 from proteinfoundation.utils.ff_utils.pdb_utils import mask_cath_code_by_level
+from proteinfoundation.utils.align_utils.align_utils import mean_w_mask
 
 
 class ModelTrainerBase(L.LightningModule):
@@ -86,6 +86,48 @@ class ModelTrainerBase(L.LightningModule):
             )
         return x_1_pred
 
+    def _prepare_motif_batch(
+        self,
+        batch: Dict,
+        x_1: Tensor = None,
+        mask: Tensor = None,
+        zeroes: bool = False,
+    ):
+        if not self.motif_conditioning:
+            return x_1
+
+        use_provided_motifs = self.cfg_exp.training.get("use_provided_motifs", False)
+        has_provided_motif = "fixed_sequence_mask" in batch and "x_motif" in batch
+
+        if use_provided_motifs and has_provided_motif:
+            batch["fixed_sequence_mask"] = batch["fixed_sequence_mask"].bool()
+            if "motif_mask" not in batch:
+                batch["motif_mask"] = batch["fixed_sequence_mask"]
+            if "fixed_structure_mask" not in batch:
+                batch["fixed_structure_mask"] = (
+                    batch["fixed_sequence_mask"][:, :, None]
+                    * batch["fixed_sequence_mask"][:, None, :]
+                ).bool()
+            batch["x_motif"] = (
+                batch["x_motif"]
+                - mean_w_mask(
+                    batch["x_motif"], batch["fixed_sequence_mask"], keepdim=True
+                )
+            ) * batch["fixed_sequence_mask"][..., None]
+            if x_1 is not None and mask is not None:
+                x_1 = (
+                    x_1
+                    - mean_w_mask(x_1, batch["fixed_sequence_mask"], keepdim=True)
+                ) * mask[..., None]
+                batch["x_1"] = x_1
+            return x_1
+
+        if "fixed_structure_mask" not in batch or "x_motif" not in batch:
+            batch.update(self.motif_factory(batch, zeroes=zeroes))
+        if "motif_mask" not in batch and "fixed_sequence_mask" in batch:
+            batch["motif_mask"] = batch["fixed_sequence_mask"]
+        return x_1
+
     def predict_clean(
         self,
         batch: Dict,
@@ -109,9 +151,7 @@ class ModelTrainerBase(L.LightningModule):
                 - For CAflow it returns a tensor of shape [*, n, 3].
             Other things predicted by nn (pair_pred for distogram loss)
         """
-        if self.motif_conditioning:
-            batch.update(self.motif_factory(batch, zeroes = True))
-            batch["motif_mask"] = batch["fixed_sequence_mask"]
+        self._prepare_motif_batch(batch)
         nn_out = self.nn(batch, return_flag)  # [*, n, 3]
         if return_flag == "encoder":
             return nn_out['disc_prob']
@@ -138,8 +178,7 @@ class ModelTrainerBase(L.LightningModule):
         WARNING: The ag checkpoint needs to rely on the same parameterization of the main model. This can be changed after training
         so no big deal but just in case leaving a note.
         """
-        if self.motif_conditioning and ("fixed_structure_mask" not in batch or "x_motif" not in batch):
-            batch.update(self.motif_factory(batch, zeroes = True))  # for generation we have to pass conditioning info in. But for validation do the same as training
+        self._prepare_motif_batch(batch, zeroes=True)
 
         nn_out = self.nn(batch)
         x_pred = self._nn_out_to_x_clean(nn_out, batch)
@@ -256,8 +295,7 @@ class ModelTrainerBase(L.LightningModule):
         )
         
         if self.motif_conditioning:
-            batch.update(self.motif_factory(batch))
-            x_1 = batch["x_1"] # we need this since we change x_1 based n the motif center
+            x_1 = self._prepare_motif_batch(batch, x_1=x_1, mask=mask)
         # Interpolation
         x_t = self.fm.interpolate(x_0, x_1, t)
         # Add a few things to batch, needed for nn
@@ -485,9 +523,9 @@ class ModelTrainerBase(L.LightningModule):
         
         mask = batch['mask'].squeeze(0) if 'mask' in batch else None
         if 'motif_seq_mask' in batch:
-            fixed_sequence_mask = batch['motif_seq_mask'].squeeze(0).to(self.device)
+            fixed_sequence_mask = batch['motif_seq_mask'].squeeze(0).to(self.device).bool()
             x_motif = batch['motif_structure'].squeeze(0).to(self.device)
-            fixed_structure_mask = fixed_sequence_mask[:, :, None] * fixed_sequence_mask[:, None, :]
+            fixed_structure_mask = (fixed_sequence_mask[:, :, None] * fixed_sequence_mask[:, None, :]).bool()
         else:
             fixed_sequence_mask, x_motif, fixed_structure_mask = None, None, None
             fixed_sequence_mask = None
