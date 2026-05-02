@@ -47,6 +47,27 @@ def save_pt(pt, fname):
     torch.save(pt, fname)
 
 
+def infer_reset_counter(cur_nimg: int, period_nimg: int = 400000) -> int:
+    """Infer how many periodic 400k resets have already happened."""
+    if cur_nimg <= 0:
+        return 1
+    return int(max(cur_nimg - 1, 0) // period_nimg) + 1
+
+
+def align_scheduler_to_optimizer_lr(scheduler, optimizer) -> None:
+    """Best-effort fallback for old checkpoints with no scheduler state."""
+    current_lrs = [group["lr"] for group in optimizer.param_groups]
+    scheduler.base_lrs = list(current_lrs)
+    if hasattr(scheduler, "_last_lr"):
+        scheduler._last_lr = list(current_lrs)
+    if hasattr(scheduler, "last_epoch"):
+        scheduler.last_epoch = 0
+    if hasattr(scheduler, "T_cur"):
+        scheduler.T_cur = 0
+    if hasattr(scheduler, "_step_count"):
+        scheduler._step_count = 0
+
+
 def calculate_metric(metric,  G, init_sigma, network_kwargs, dataset_kwargs, num_gpus, rank, local_rank, device,data_stat):
     return metric_main.calc_metric(metric=metric,G=G, init_sigma=init_sigma, network_kwargs=network_kwargs,
         dataset_kwargs=dataset_kwargs, num_gpus=num_gpus, rank=rank, local_rank=local_rank, device=device,data_stat=data_stat)
@@ -229,6 +250,10 @@ def training_loop(
         eta_min=1e-6  # Minimum LR to decay to
     )
     
+    restored_cur_nimg = resume_kimg * 1000
+    restored_cur_tick = 0
+    reset_counter = infer_reset_counter(restored_cur_nimg)
+
     # Resume training from previous snapshot.
     if resume_pkl is not None:
         dist.print0(f'Loading network weights from URL "{resume_pkl}"...')
@@ -254,8 +279,23 @@ def training_loop(
             G_ema.eval().requires_grad_(False)
             fake_score_optimizer.load_state_dict(data['fake_score_optimizer_state'])
             g_optimizer.load_state_dict(data['g_optimizer_state'])
+            if 'fake_score_scheduler_state' in data:
+                fake_score_scheduler.load_state_dict(data['fake_score_scheduler_state'])
+            else:
+                align_scheduler_to_optimizer_lr(fake_score_scheduler, fake_score_optimizer)
+            if 'g_scheduler_state' in data:
+                g_scheduler.load_state_dict(data['g_scheduler_state'])
+            else:
+                align_scheduler_to_optimizer_lr(g_scheduler, g_optimizer)
+            restored_cur_nimg = int(data.get('cur_nimg', resume_kimg * 1000))
+            restored_cur_tick = int(data.get('cur_tick', 0))
+            reset_counter = int(data.get('reset_counter', infer_reset_counter(restored_cur_nimg)))
             del data # conserve memory
             dist.print0('Loading checkpoint completed')
+            dist.print0(
+                f"Resuming state: cur_nimg={restored_cur_nimg}, "
+                f"cur_tick={restored_cur_tick}, reset_counter={reset_counter}"
+            )
             dist.print0('Setting up optimizer...')
             fake_score_ddp = torch.nn.parallel.DistributedDataParallel(fake_score, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
             G_ddp = torch.nn.parallel.DistributedDataParallel(G, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
@@ -283,8 +323,8 @@ def training_loop(
     # Train.
     dist.print0(f'Training for {total_kimg} kimg...')
     dist.print0()
-    cur_nimg = resume_kimg * 1000
-    cur_tick = 0
+    cur_nimg = restored_cur_nimg
+    cur_tick = restored_cur_tick
     tick_start_nimg = cur_nimg
     tick_start_time = time.time()
     maintenance_time = tick_start_time - start_time
@@ -298,7 +338,6 @@ def training_loop(
     else:
         t_steps = torch.round(torch.linspace(network_kwargs.t_init, network_kwargs.t, steps=network_kwargs.nstep))
     cath_code = None
-    reset_counter = 1
     torch.cuda.empty_cache()
 
     while True:  
@@ -579,7 +618,21 @@ def training_loop(
 
         if (state_dump_ticks is not None) and (done or cur_tick % state_dump_ticks == 0) and cur_tick != 0 and dist.get_rank() == 0:
             dist.print0(f'saving checkpoint: training-state-{cur_nimg//1000:06d}.pt')
-            save_pt(pt=dict(fake_score=fake_score, G=G, G_ema=G_ema, fake_score_optimizer_state=fake_score_optimizer.state_dict(), g_optimizer_state=g_optimizer.state_dict()), fname=os.path.join(run_dir, f'training-state-{cur_nimg//1000:06d}.pt'))
+            save_pt(
+                pt=dict(
+                    fake_score=fake_score,
+                    G=G,
+                    G_ema=G_ema,
+                    fake_score_optimizer_state=fake_score_optimizer.state_dict(),
+                    g_optimizer_state=g_optimizer.state_dict(),
+                    fake_score_scheduler_state=fake_score_scheduler.state_dict(),
+                    g_scheduler_state=g_scheduler.state_dict(),
+                    cur_nimg=cur_nimg,
+                    cur_tick=cur_tick,
+                    reset_counter=reset_counter,
+                ),
+                fname=os.path.join(run_dir, f'training-state-{cur_nimg//1000:06d}.pt'),
+            )
             if (result_dict.results['scRMSD'] < 2):
                 torch.save(G.model.state_dict(), 'vsd_proteina_generator.pth')    
         dist.print0("Evaluation Done")
