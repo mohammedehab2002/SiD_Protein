@@ -24,6 +24,7 @@ import wandb
 from contextlib import nullcontext
 from functools import partial
 from torch.amp import autocast, GradScaler
+from torch.utils.data import DataLoader, DistributedSampler
 from torch_utils import distributed as dist
 from torch_utils import training_stats
 from torch_utils import misc
@@ -35,6 +36,7 @@ import itertools
 from metrics import sid_metric_main as metric_main
 from training.proteina.proteina_utils import interpolate, sample_reference, extract_clean_sample
 from training.proteina.proteinfoundation.inference import parse_len_cath_code
+from training.proteina.proteinfoundation.utils.dense_padding_data_loader import DensePaddingDataLoader
 from training.sid_utils import sample_training_parameters, generator_step
 
 #----------------------------------------------------------------------------
@@ -45,6 +47,27 @@ def save_data(data, fname):
 
 def save_pt(pt, fname):
     torch.save(pt, fname)
+
+
+def infer_reset_counter(cur_nimg: int, period_nimg: int = 400000) -> int:
+    """Infer how many periodic 400k resets have already happened."""
+    if cur_nimg <= 0:
+        return 1
+    return int(max(cur_nimg - 1, 0) // period_nimg) + 1
+
+
+def align_scheduler_to_optimizer_lr(scheduler, optimizer) -> None:
+    """Best-effort fallback for old checkpoints with no scheduler state."""
+    current_lrs = [group["lr"] for group in optimizer.param_groups]
+    scheduler.base_lrs = list(current_lrs)
+    if hasattr(scheduler, "_last_lr"):
+        scheduler._last_lr = list(current_lrs)
+    if hasattr(scheduler, "last_epoch"):
+        scheduler.last_epoch = 0
+    if hasattr(scheduler, "T_cur"):
+        scheduler.T_cur = 0
+    if hasattr(scheduler, "_step_count"):
+        scheduler._step_count = 0
 
 
 def calculate_metric(metric,  G, init_sigma, network_kwargs, dataset_kwargs, num_gpus, rank, local_rank, device,data_stat):
@@ -90,6 +113,30 @@ def is_loss_nan_check(loss: torch.Tensor) -> bool:
     if nan_flag.item() > 0.0:
         return True
     return False
+
+
+def infinite_dataloader(dataloader, sampler=None):
+    epoch = 0
+    while True:
+        if sampler is not None:
+            sampler.set_epoch(epoch)
+        for batch in dataloader:
+            yield batch
+        epoch += 1
+
+
+def prepare_real_proteina_batch(batch, device, num_t_steps):
+    batch = batch.to(device)
+    real_x_g, mask, _, n, dtype = extract_clean_sample(batch)
+    current_batch_size = int(mask.shape[0])
+    mask = mask.to(device)
+    batch["nsamples"] = torch.tensor([current_batch_size])
+    batch["nres"] = torch.tensor([n])
+    batch["mask"] = mask
+    batch_shape = (current_batch_size,)
+    train_step = torch.randint(0, num_t_steps, (1,)).item()
+    x_1 = torch.zeros((current_batch_size, n, 3), device=device)
+    return batch, real_x_g, mask, batch_shape, n, dtype, x_1, train_step
 
 #----------------------------------------------------------------------------
 
@@ -161,7 +208,7 @@ def training_loop(
     if network_kwargs.class_name == 'training.networks.ProteinaWrapper' and motif_conditional:
         version_base = hydra.__version__
         config_path = os.path.abspath("./training/proteina/configs/datasets_config")
-        hydra.initialize_config_dir(config_dir=f"{config_path}/pdb", version_base=version_base)
+        hydra.initialize_config_dir(config_dir=f"{config_path}/broteina", version_base=version_base)
 
         cfg = hydra.compose(
             config_name="pdb_train",
@@ -174,7 +221,7 @@ def training_loop(
         pdb_train_dataloader = pdb_datamodule.train_dataloader()
         dataset_iterator = itertools.cycle(pdb_train_dataloader)
         print(f'Using ProteinaWrapper dataset with {len(pdb_train_dataloader.dataset)} samples.')
-        network_kwargs.update({'val_dataloader': pdb_datamodule.val_dataloader()})
+        network_kwargs.update({'val_dataloader': itertools.cycle(pdb_datamodule.val_dataloader())})
 
     # Construct network.
     dist.print0('Constructing network...')
@@ -230,9 +277,73 @@ def training_loop(
         T_mult=2,     # Multiplier for cycle length (doubles each time)
         eta_min=1e-6  # Minimum LR to decay to
     )
-    
-    # Resume training from previous snapshot.
-    if resume_pkl is not None:
+
+    restored_cur_nimg = resume_kimg * 1000
+    restored_cur_tick = 0
+    reset_counter = infer_reset_counter(restored_cur_nimg)
+
+    # Resume training from previous state or snapshot.
+    if resume_training is not None:
+        dist.print0('checkpoint path:',resume_training)
+        data = torch.load(resume_training, map_location=torch.device('cpu'))
+        if 'true_score' in data:
+            misc.copy_params_and_buffers(src_module=data['true_score'], dst_module=true_score, require_all=True)
+            teacher_resume_source = 'training-state'
+        elif network_kwargs.class_name == 'training.networks.ProteinaWrapper':
+            teacher_resume_source = 'config'
+            if resume_pkl is not None:
+                dist.print0(
+                    'Ignoring resume_pkl for true_score on Proteina resume; '
+                    'keeping the fixed teacher loaded from config.'
+                )
+        elif resume_pkl is not None:
+            dist.print0(f'Loading teacher weights from URL "{resume_pkl}"...')
+            if dist.get_rank() != 0:
+                torch.distributed.barrier() # rank 0 goes first
+            with open(resume_pkl, "rb") as f:
+                teacher_data = pickle.load(f)
+            if dist.get_rank() == 0:
+                torch.distributed.barrier() # other ranks follow
+            misc.copy_params_and_buffers(src_module=teacher_data['ema'], dst_module=true_score, require_all=False)
+            del teacher_data
+            teacher_resume_source = 'resume_pkl'
+        else:
+            teacher_resume_source = 'current-init'
+            dist.print0(
+                'No true_score found in training state and no resume_pkl given; '
+                'resuming with the teacher from the current model initialization.'
+            )
+
+        misc.copy_params_and_buffers(src_module=data['fake_score'], dst_module=fake_score, require_all=True)
+        misc.copy_params_and_buffers(src_module=data['G'], dst_module=G, require_all=True)
+        G_ema = copy.deepcopy(G).eval().requires_grad_(False)
+        misc.copy_params_and_buffers(src_module=data['G_ema'], dst_module=G_ema, require_all=True)
+        G_ema.eval().requires_grad_(False)
+        fake_score_optimizer.load_state_dict(data['fake_score_optimizer_state'])
+        g_optimizer.load_state_dict(data['g_optimizer_state'])
+        if 'fake_score_scheduler_state' in data:
+            fake_score_scheduler.load_state_dict(data['fake_score_scheduler_state'])
+        else:
+            align_scheduler_to_optimizer_lr(fake_score_scheduler, fake_score_optimizer)
+        if 'g_scheduler_state' in data:
+            g_scheduler.load_state_dict(data['g_scheduler_state'])
+        else:
+            align_scheduler_to_optimizer_lr(g_scheduler, g_optimizer)
+        restored_cur_nimg = int(data.get('cur_nimg', resume_kimg * 1000))
+        restored_cur_tick = int(data.get('cur_tick', 0))
+        reset_counter = int(data.get('reset_counter', infer_reset_counter(restored_cur_nimg)))
+        del data # conserve memory
+        dist.print0('Loading checkpoint completed')
+        dist.print0(
+            f"Resuming state: cur_nimg={restored_cur_nimg}, "
+            f"cur_tick={restored_cur_tick}, reset_counter={reset_counter}, "
+            f"teacher_source={teacher_resume_source}"
+        )
+        dist.print0('Setting up optimizer...')
+        fake_score_ddp = torch.nn.parallel.DistributedDataParallel(fake_score, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
+        G_ddp = torch.nn.parallel.DistributedDataParallel(G, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
+
+    elif resume_pkl is not None:
         dist.print0(f'Loading network weights from URL "{resume_pkl}"...')
         if dist.get_rank() != 0:
             torch.distributed.barrier() # rank 0 goes first
@@ -247,21 +358,7 @@ def training_loop(
         misc.copy_params_and_buffers(src_module=data['ema'], dst_module=true_score, require_all=False)
         
         if resume_training is not None:
-            dist.print0('checkpoint path:',resume_training)
-            data = torch.load(resume_training, map_location=torch.device('cpu'))
-            misc.copy_params_and_buffers(src_module=data['fake_score'], dst_module=fake_score, require_all=True)
-            misc.copy_params_and_buffers(src_module=data['G'], dst_module=G, require_all=True)
-            G_ema = copy.deepcopy(G).eval().requires_grad_(False)
-            misc.copy_params_and_buffers(src_module=data['G_ema'], dst_module=G_ema, require_all=True)
-            G_ema.eval().requires_grad_(False)
-            fake_score_optimizer.load_state_dict(data['fake_score_optimizer_state'])
-            g_optimizer.load_state_dict(data['g_optimizer_state'])
-            del data # conserve memory
-            dist.print0('Loading checkpoint completed')
-            dist.print0('Setting up optimizer...')
-            fake_score_ddp = torch.nn.parallel.DistributedDataParallel(fake_score, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
-            G_ddp = torch.nn.parallel.DistributedDataParallel(G, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
-
+            raise RuntimeError('Internal error: resume_training should have been handled before resume_pkl.')
         else:     
             # Setup optimizer.
             misc.copy_params_and_buffers(src_module=data['ema'], dst_module=fake_score, require_all=False)
@@ -285,8 +382,8 @@ def training_loop(
     # Train.
     dist.print0(f'Training for {total_kimg} kimg...')
     dist.print0()
-    cur_nimg = resume_kimg * 1000
-    cur_tick = 0
+    cur_nimg = restored_cur_nimg
+    cur_tick = restored_cur_tick
     tick_start_nimg = cur_nimg
     tick_start_time = time.time()
     maintenance_time = tick_start_time - start_time
@@ -300,7 +397,6 @@ def training_loop(
     else:
         t_steps = torch.round(torch.linspace(network_kwargs.t_init, network_kwargs.t, steps=network_kwargs.nstep))
     cath_code = None
-    reset_counter = 1
     torch.cuda.empty_cache()
 
     while True:  
@@ -336,23 +432,13 @@ def training_loop(
                 if not motif_conditional:
                     batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
                 else:
-                    batch = next(dataset_iterator).to(device)
-                    real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
-                    batch['nsamples'] = torch.tensor([batch_gpu])
-                    batch['nres'] = torch.tensor([n])
-                    mask = mask.to(device)
-                    batch['mask'] = mask
-                    train_step = torch.randint(0, len(t_steps), (1,)).item()
-                    x_1 = torch.zeros((batch_gpu, n, 3), device=device)
+                    batch, _, mask, batch_shape, n, dtype, x_1, train_step = prepare_real_proteina_batch(
+                        next(dataset_iterator), device, len(t_steps)
+                    )
             else:
-                batch = next(dataset_iterator).to(device)
-                real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
-                batch['nsamples'] = torch.tensor([batch_gpu])
-                batch['nres'] = torch.tensor([n])
-                mask = mask.to(device)
-                batch['mask'] = mask
-                train_step = torch.randint(0, len(t_steps), (1,)).item()
-                x_1 = torch.zeros((batch_gpu, n, 3), device=device)
+                batch, real_x_g, mask, batch_shape, n, dtype, x_1, train_step = prepare_real_proteina_batch(
+                    next(dataset_iterator), device, len(t_steps)
+                )
             with misc.ddp_sync(G_ddp, False):
                 for i, t_step in enumerate(t_steps):
                     # Only compute gradients for the selected time step
@@ -439,23 +525,13 @@ def training_loop(
                 if not motif_conditional:
                     batch, batch_shape, n, mask, x_1, train_step = sample_training_parameters(network_kwargs, nstep, batch_gpu, device)
                 else:
-                    batch = next(dataset_iterator).to(device)
-                    real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
-                    batch['nsamples'] = torch.tensor([batch_gpu])
-                    batch['nres'] = torch.tensor([n])
-                    mask = mask.to(device)
-                    batch['mask'] = mask
-                    train_step = torch.randint(0, len(t_steps), (1,)).item()
-                    x_1 = torch.zeros((batch_gpu, n, 3), device=device)
+                    batch, _, mask, batch_shape, n, dtype, x_1, train_step = prepare_real_proteina_batch(
+                        next(dataset_iterator), device, len(t_steps)
+                    )
             else:
-                batch = next(dataset_iterator).to(device)
-                real_x_g, mask, batch_shape, n, dtype = extract_clean_sample(batch)
-                batch['nsamples'] = torch.tensor([batch_gpu])
-                batch['nres'] = torch.tensor([n])
-                mask = mask.to(device)
-                batch['mask'] = mask
-                train_step = torch.randint(0, len(t_steps), (1,)).item()
-                x_1 = torch.zeros((batch_gpu, n, 3), device=device)
+                batch, real_x_g, mask, batch_shape, n, dtype, x_1, train_step = prepare_real_proteina_batch(
+                    next(dataset_iterator), device, len(t_steps)
+                )
             with misc.ddp_sync(G_ddp, (round_idx == num_accumulation_rounds - 1)):
                 for i, t_step in enumerate(t_steps):
                     # Only compute gradients for the selected time step
@@ -601,7 +677,22 @@ def training_loop(
 
         if (state_dump_ticks is not None) and (done or cur_tick % state_dump_ticks == 0) and cur_tick != 0 and dist.get_rank() == 0:
             dist.print0(f'saving checkpoint: training-state-{cur_nimg//1000:06d}.pt')
-            save_pt(pt=dict(fake_score=fake_score, G=G, G_ema=G_ema, fake_score_optimizer_state=fake_score_optimizer.state_dict(), g_optimizer_state=g_optimizer.state_dict()), fname=os.path.join(run_dir, f'training-state-{cur_nimg//1000:06d}.pt'))
+            save_pt(
+                pt=dict(
+                    true_score=true_score,
+                    fake_score=fake_score,
+                    G=G,
+                    G_ema=G_ema,
+                    fake_score_optimizer_state=fake_score_optimizer.state_dict(),
+                    g_optimizer_state=g_optimizer.state_dict(),
+                    fake_score_scheduler_state=fake_score_scheduler.state_dict(),
+                    g_scheduler_state=g_scheduler.state_dict(),
+                    cur_nimg=cur_nimg,
+                    cur_tick=cur_tick,
+                    reset_counter=reset_counter,
+                ),
+                fname=os.path.join(run_dir, f'training-state-{cur_nimg//1000:06d}.pt'),
+            )
             if (result_dict.results['scRMSD'] < 2):
                 torch.save(G.model.state_dict(), 'vsd_proteina_generator.pth')    
         dist.print0("Evaluation Done")
