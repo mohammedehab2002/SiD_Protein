@@ -254,8 +254,68 @@ def training_loop(
     restored_cur_tick = 0
     reset_counter = infer_reset_counter(restored_cur_nimg)
 
-    # Resume training from previous snapshot.
-    if resume_pkl is not None:
+    # Resume training from previous state or snapshot.
+    if resume_training is not None:
+        dist.print0('checkpoint path:',resume_training)
+        data = torch.load(resume_training, map_location=torch.device('cpu'))
+        if 'true_score' in data:
+            misc.copy_params_and_buffers(src_module=data['true_score'], dst_module=true_score, require_all=True)
+            teacher_resume_source = 'training-state'
+        elif network_kwargs.class_name == 'training.networks.ProteinaWrapper':
+            teacher_resume_source = 'config'
+            if resume_pkl is not None:
+                dist.print0(
+                    'Ignoring resume_pkl for true_score on Proteina resume; '
+                    'keeping the fixed teacher loaded from config.'
+                )
+        elif resume_pkl is not None:
+            dist.print0(f'Loading teacher weights from URL "{resume_pkl}"...')
+            if dist.get_rank() != 0:
+                torch.distributed.barrier() # rank 0 goes first
+            with open(resume_pkl, "rb") as f:
+                teacher_data = pickle.load(f)
+            if dist.get_rank() == 0:
+                torch.distributed.barrier() # other ranks follow
+            misc.copy_params_and_buffers(src_module=teacher_data['ema'], dst_module=true_score, require_all=False)
+            del teacher_data
+            teacher_resume_source = 'resume_pkl'
+        else:
+            teacher_resume_source = 'current-init'
+            dist.print0(
+                'No true_score found in training state and no resume_pkl given; '
+                'resuming with the teacher from the current model initialization.'
+            )
+
+        misc.copy_params_and_buffers(src_module=data['fake_score'], dst_module=fake_score, require_all=True)
+        misc.copy_params_and_buffers(src_module=data['G'], dst_module=G, require_all=True)
+        G_ema = copy.deepcopy(G).eval().requires_grad_(False)
+        misc.copy_params_and_buffers(src_module=data['G_ema'], dst_module=G_ema, require_all=True)
+        G_ema.eval().requires_grad_(False)
+        fake_score_optimizer.load_state_dict(data['fake_score_optimizer_state'])
+        g_optimizer.load_state_dict(data['g_optimizer_state'])
+        if 'fake_score_scheduler_state' in data:
+            fake_score_scheduler.load_state_dict(data['fake_score_scheduler_state'])
+        else:
+            align_scheduler_to_optimizer_lr(fake_score_scheduler, fake_score_optimizer)
+        if 'g_scheduler_state' in data:
+            g_scheduler.load_state_dict(data['g_scheduler_state'])
+        else:
+            align_scheduler_to_optimizer_lr(g_scheduler, g_optimizer)
+        restored_cur_nimg = int(data.get('cur_nimg', resume_kimg * 1000))
+        restored_cur_tick = int(data.get('cur_tick', 0))
+        reset_counter = int(data.get('reset_counter', infer_reset_counter(restored_cur_nimg)))
+        del data # conserve memory
+        dist.print0('Loading checkpoint completed')
+        dist.print0(
+            f"Resuming state: cur_nimg={restored_cur_nimg}, "
+            f"cur_tick={restored_cur_tick}, reset_counter={reset_counter}, "
+            f"teacher_source={teacher_resume_source}"
+        )
+        dist.print0('Setting up optimizer...')
+        fake_score_ddp = torch.nn.parallel.DistributedDataParallel(fake_score, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
+        G_ddp = torch.nn.parallel.DistributedDataParallel(G, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
+
+    elif resume_pkl is not None:
         dist.print0(f'Loading network weights from URL "{resume_pkl}"...')
         if dist.get_rank() != 0:
             torch.distributed.barrier() # rank 0 goes first
@@ -270,36 +330,7 @@ def training_loop(
         misc.copy_params_and_buffers(src_module=data['ema'], dst_module=true_score, require_all=False)
         
         if resume_training is not None:
-            dist.print0('checkpoint path:',resume_training)
-            data = torch.load(resume_training, map_location=torch.device('cpu'))
-            misc.copy_params_and_buffers(src_module=data['fake_score'], dst_module=fake_score, require_all=True)
-            misc.copy_params_and_buffers(src_module=data['G'], dst_module=G, require_all=True)
-            G_ema = copy.deepcopy(G).eval().requires_grad_(False)
-            misc.copy_params_and_buffers(src_module=data['G_ema'], dst_module=G_ema, require_all=True)
-            G_ema.eval().requires_grad_(False)
-            fake_score_optimizer.load_state_dict(data['fake_score_optimizer_state'])
-            g_optimizer.load_state_dict(data['g_optimizer_state'])
-            if 'fake_score_scheduler_state' in data:
-                fake_score_scheduler.load_state_dict(data['fake_score_scheduler_state'])
-            else:
-                align_scheduler_to_optimizer_lr(fake_score_scheduler, fake_score_optimizer)
-            if 'g_scheduler_state' in data:
-                g_scheduler.load_state_dict(data['g_scheduler_state'])
-            else:
-                align_scheduler_to_optimizer_lr(g_scheduler, g_optimizer)
-            restored_cur_nimg = int(data.get('cur_nimg', resume_kimg * 1000))
-            restored_cur_tick = int(data.get('cur_tick', 0))
-            reset_counter = int(data.get('reset_counter', infer_reset_counter(restored_cur_nimg)))
-            del data # conserve memory
-            dist.print0('Loading checkpoint completed')
-            dist.print0(
-                f"Resuming state: cur_nimg={restored_cur_nimg}, "
-                f"cur_tick={restored_cur_tick}, reset_counter={reset_counter}"
-            )
-            dist.print0('Setting up optimizer...')
-            fake_score_ddp = torch.nn.parallel.DistributedDataParallel(fake_score, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
-            G_ddp = torch.nn.parallel.DistributedDataParallel(G, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
-
+            raise RuntimeError('Internal error: resume_training should have been handled before resume_pkl.')
         else:     
             # Setup optimizer.
             misc.copy_params_and_buffers(src_module=data['ema'], dst_module=fake_score, require_all=False)
@@ -312,6 +343,7 @@ def training_loop(
             del data # conserve memory
         fake_score_ddp.eval().requires_grad_(False)
         G_ddp.eval().requires_grad_(False)
+
     else:
         fake_score_ddp = torch.nn.parallel.DistributedDataParallel(fake_score, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
         G_ddp = torch.nn.parallel.DistributedDataParallel(G, device_ids=[device], broadcast_buffers=False,find_unused_parameters=False)
@@ -620,6 +652,7 @@ def training_loop(
             dist.print0(f'saving checkpoint: training-state-{cur_nimg//1000:06d}.pt')
             save_pt(
                 pt=dict(
+                    true_score=true_score,
                     fake_score=fake_score,
                     G=G,
                     G_ema=G_ema,
