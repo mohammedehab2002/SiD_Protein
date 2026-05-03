@@ -43,7 +43,7 @@ torchrun --standalone --nproc_per_node=8 sid_train.py \
 --duration 100 \
 --use_sida false \
 --motif_conditional true \
---config_path 'proteina/configs/experiment_config/' \
+--config_path 'training/proteina/configs/experiment_config/' \
 --config_name 'broteina_distillation_motif' \
 --noise_scale 1.0 \
 --nstep 8 \
