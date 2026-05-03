@@ -406,6 +406,7 @@ def training_loop(
     dist.update_progress(cur_nimg // 1000, total_kimg)
     stats_jsonl = None
     stats_metrics = dict()
+    last_result_dict = None
 
     nstep = network_kwargs.nstep
     if nstep == 1:
@@ -673,6 +674,7 @@ def training_loop(
             for metric in metrics:
                 result_dict = calculate_metric(metric=metric, G=G, init_sigma=init_sigma, network_kwargs=network_kwargs,
                     dataset_kwargs=dataset_kwargs, num_gpus=dist.get_world_size(), rank=dist.get_rank(), local_rank=dist.get_local_rank(), device=device,data_stat=data_stat)
+                last_result_dict = result_dict
                 if dist.get_rank() == 0:
                     print(result_dict.results)
                     metric_main.report_metric(result_dict, run_dir=run_dir, snapshot_pkl=f'fakes_{alpha:03f}_{cur_nimg//1000:06d}.png', alpha=alpha)  
@@ -709,7 +711,7 @@ def training_loop(
                 ),
                 fname=os.path.join(run_dir, f'training-state-{cur_nimg//1000:06d}.pt'),
             )
-            if (result_dict.results['scRMSD'] < 2):
+            if last_result_dict is not None and last_result_dict.results.get('scRMSD', float('inf')) < 2:
                 torch.save(G.model.state_dict(), 'vsd_proteina_generator.pth')    
         dist.print0("Evaluation Done")
         # Update logs.

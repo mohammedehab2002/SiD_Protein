@@ -30,7 +30,7 @@ torchrun --standalone --nproc_per_node=8 sid_train.py \
 --data 'pdb_raw/cath_label_mapping.pt' \
 --arch proteina \
 --precond proteina \
---metrics sctm \
+--metrics none \
 --tick 5 \
 --snap 2 \
 --dump 12 \
