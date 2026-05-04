@@ -1,13 +1,13 @@
 run_name_: motif_scaffolfing
-ckpt_path: path/to/checkpoint/directory
+ckpt_path: /home/ehab02/broteina/SiD_Protein/pretrained_checkpoints
 ckpt_name: proteina_v1.7_DFS_60M_notri_motif_scaffolding.ckpt
 
 ncpus_: 24
 seed: 5
 
-nsamples: 2
+nsamples: 100
 # Maximum number of samples in each batch
-max_nsamples_per_batch: 2
+max_nsamples_per_batch: 10
 contig_string: "10-20/B38/15-30/A14/15-30/C99/10-20"
 motif_pdb_path: "/path/to/root/protein-foundation-models/motif_data/1QJG.pdb" 
 motif_task_name: "1QJG"
