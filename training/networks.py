@@ -20,6 +20,7 @@ import hydra
 from hydra.core.global_hydra import GlobalHydra
 import os
 from dotenv import load_dotenv
+from omegaconf import open_dict
 
 
 """Model architectures and preconditioning schemes used in the paper
@@ -693,13 +694,22 @@ class ProteinaWrapper(torch.nn.Module):
         super().__init__()
         load_dotenv()
         GlobalHydra.instance().clear()
-        with hydra.initialize(config_path, version_base=hydra.__version__):
+        config_dir = config_path if os.path.isabs(config_path) else os.path.abspath(config_path)
+        with hydra.initialize_config_dir(config_dir=config_dir, version_base=hydra.__version__):
             cfg = hydra.compose(config_name=config_name)
 
         ckpt_path = cfg.ckpt_path
         ckpt_file = os.path.join(ckpt_path, cfg.ckpt_name)
         assert os.path.exists(ckpt_file), f"Not a valid checkpoint {ckpt_file}"
         self.model = Proteina.load_from_checkpoint(ckpt_file, strict=False)
+        with open_dict(self.model.cfg_exp.training):
+            for key, value in cfg.get("training", {}).items():
+                self.model.cfg_exp.training[key] = value
+        with open_dict(self.model.cfg_exp):
+            for key in ("dataset", "dataset_config_subdir", "run_name_"):
+                if key in cfg:
+                    self.model.cfg_exp[key] = cfg[key]
+        self.model.motif_conditioning = self.model.cfg_exp.training.get("motif_conditioning", False)
         nn_ag = None
         self.model.configure_inference(cfg, nn_ag=nn_ag)
 
