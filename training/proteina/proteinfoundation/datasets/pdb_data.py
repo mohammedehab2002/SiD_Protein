@@ -397,7 +397,7 @@ class PDBDataset(Dataset):
             else:
                 fname = f"{self.pdb_codes[idx]}.pt"
 
-            graph = torch.load(self.data_dir / "processed" / fname, weights_only=False)
+            graph = torch.load(self.data_dir / "processed" / "dataset" / fname, weights_only=False)
 
         # reorder coords to be in OpenFold and not PDB convention
         graph.coords = graph.coords[:, PDB_TO_OPENFOLD_INDEX_TENSOR, :]
@@ -607,7 +607,7 @@ class PDBLightningDataModule(BaseLightningDataModule):
             if self.dataselector:
                 file_identifier = self._get_file_identifier(self.dataselector)
             else:
-                file_identifier = f"designable_pdb"
+                file_identifier = f"uniform_pdb"
 
             df_data_name = f"{file_identifier}.csv"
             logger.info(f"Loading dataset csv from {df_data_name}")

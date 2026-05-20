@@ -9,6 +9,19 @@ from pathlib import Path
 PROJECT_DIR = "~/broteina/SiD_Protein/"
 CONDA_ENV = "sid_protein_env"
 SCRIPT = "generate_distilled_proteina_designability.py"
+CONDA_SH = str(
+    (
+        Path(
+            os.environ.get(
+                "CONDA_EXE",
+                str(Path.home() / "miniconda3" / "bin" / "conda"),
+            )
+        ).resolve().parent.parent
+    )
+    / "etc"
+    / "profile.d"
+    / "conda.sh"
+)
 
 MODEL_PATH = (
     # "/homes/kasram/broteina/SiD_Protein/protein_experiment/sid-train-runs/"
@@ -177,8 +190,10 @@ def main() -> int:
 
         cmd = (
             f"cd {PROJECT_DIR} && "
-            # f"source {conda_sh} && "
+            f"source {CONDA_SH} && "
+            f"conda deactivate >/dev/null 2>&1 || true && "
             f"conda activate {CONDA_ENV} && "
+            f"export PYTHONPATH=$(pwd)/training/proteina:$(pwd):${{PYTHONPATH:-}} && "
             f"CUDA_VISIBLE_DEVICES={i} python {SCRIPT} "
             f"--model_path {MODEL_PATH} "
             f"--out_dir {OUT_DIR} "

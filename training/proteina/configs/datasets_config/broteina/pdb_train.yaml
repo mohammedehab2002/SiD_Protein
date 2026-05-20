@@ -1,6 +1,6 @@
 datamodule:
   _target_: "proteinfoundation.datasets.pdb_data.PDBLightningDataModule"
-  data_dir: /homes/kasram/broteina/dataset/pdb/ # Directory where the dataset is stored
+  data_dir: /homes/kasram/broteina/dataset/des/training_dataset/ # Directory where the dataset is stored
   in_memory: False
   format: "pdb" # format for file download
   overwrite: False # Whether to overwrite existing dataset files and reprocess the raw data

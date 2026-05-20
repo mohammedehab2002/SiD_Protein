@@ -46,6 +46,6 @@ torchrun --standalone --nproc_per_node=8 sid_train.py \
 --config_path 'training/proteina/configs/experiment_config/' \
 --config_name 'broteina_distillation_motif' \
 --noise_scale 1.0 \
---nstep 8 \
+--nstep 16 \
 --min_n_res 30 \
 --max_n_res 270 \

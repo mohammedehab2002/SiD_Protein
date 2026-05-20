@@ -250,7 +250,7 @@ def save_motif_predictions(
             no_indexing=True,
         )
 
-def compute_scaffold(model, opts, task_number):
+def compute_scaffold(model, opts, task_number, ckpt_name):
     load_dotenv()
 
     args = argparse.Namespace(
@@ -295,7 +295,7 @@ def compute_scaffold(model, opts, task_number):
         test_cases = pd.read_csv("../MotifBench/test_cases.csv")
         cfg.motif_task_name = test_cases.iloc[args.motif_task_number - 1]["pdb_id"]
         cfg.motif_task_name = f"{args.motif_task_number:02d}_{cfg.motif_task_name}"
-        cfg.motif_pdb_path = f"../MotifBench/motif_pdbs_copy/{cfg.motif_task_name}.pdb"
+        cfg.motif_pdb_path = f"../MotifBench/motif_pdbs/{cfg.motif_task_name}.pdb"
         cfg.motif_min_length = int(test_cases.iloc[args.motif_task_number - 1]["length"])
         cfg.motif_max_length = int(test_cases.iloc[args.motif_task_number - 1]["length"])
         with open(cfg.motif_pdb_path, 'r') as f:
@@ -308,7 +308,7 @@ def compute_scaffold(model, opts, task_number):
             cfg.contig_string = contig[:-1]
             cfg.segment_order = ";".join(pre_contig.split(";")[1::2])
         global root_path
-        root_path = f"./scaffolds_{cfg.ckpt_name}_{noise_scale}/{cfg.motif_task_name}"
+        root_path = f"./inference_runs/{ckpt_name}_{noise_scale}/{cfg.motif_task_name}"
         os.makedirs(root_path, exist_ok=True)
 
     dataset = GenMotifDataset(dt=cfg.dt,
@@ -359,20 +359,52 @@ def compute_scaffold(model, opts, task_number):
 
 if __name__ == "__main__":
 
-    # with open("./checkpoints/motif_distillation_network-snapshot-1.000000-000945", "rb") as f:
-    #     model = pkl.load(f)['ema']
-    model = ProteinaWrapper('./proteina/configs/experiment_config', 'inference_motif.yaml')
+    # ckpt_path = "/homes/kasram/broteina/SiD_Protein_scratch/protein_experiment/sid-train-runs/proteina_multistep/00010-uncond-proteina-glr5e-05-lr0.0001-initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep8/"
+    # ckpt_name = "network-snapshot-1.000000-000167.pkl"
+
+    # ckpt_path = "/homes/kasram/broteina/SiD_Protein_scratch_2/protein_experiment/sid-train-runs/proteina_multistep/00014-uncond-proteina-glr5e-05-lr0.0001-initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep8/"
+    # ckpt_name = "network-snapshot-1.000000-000102.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000069.pkl"
+
+    # ckpt_path = "/homes/kasram/broteina/SiD_Protein_scratch/protein_experiment/sid-train-runs/proteina_multistep/00013-uncond-proteina-glr5e-05-lr0.0001-initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep8/"
+    # ckpt_name = "network-snapshot-1.000000-000036.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000069.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000118.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000217.pkl"
+
+    ckpt_path = "/homes/kasram/broteina/SiD_Protein_scratch_2/protein_experiment/sid-train-runs/proteina_multistep/00018-uncond-proteina-glr5e-05-lr0.0001-initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep16/"
+    # ckpt_name = "network-snapshot-1.000000-000151.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000233.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000331.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000495.pkl"
+    ckpt_name = "network-snapshot-1.000000-000380.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000413.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000446.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000528.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000561.pkl"
+
+    # ckpt_path = "/homes/kasram/broteina/SiD_Protein_scratch/protein_experiment/sid-train-runs/proteina_multistep/00014-uncond-proteina-glr5e-05-lr0.0001-initsigma2.5-gpus8-alpha1.0-batch4096-tmax0.98-fp16-nstep16/"
+    # ckpt_name = "network-snapshot-1.000000-000102.pkl"
+    # ckpt_name = "network-snapshot-1.000000-000200.pkl"
+
+    noise_scale = 0.75
+    nstep = 16
+
+    with open(ckpt_path + ckpt_name, "rb") as f:
+        model = pkl.load(f)['ema']
+    # model = ProteinaWrapper('./proteina/configs/experiment_config', 'inference_motif.yaml')
     model.eval()
     model.model.to('cuda')
     opts = argparse.Namespace(
         G=model,
         network_kwargs=argparse.Namespace(
             eval_batch=4,
-            noise_scale=0.6,
+            noise_scale=noise_scale,
             t_init=30,
             t=400,
-            nstep=8,
+            nstep=nstep,
         ),
     )
-    for i in tqdm(range(30)):
-        compute_scaffold(model, opts, i+1)
+    # for i in tqdm(range(30)):
+    for i in tqdm([4, 5, 6, 9]):
+        compute_scaffold(model, opts, i, ckpt_name)

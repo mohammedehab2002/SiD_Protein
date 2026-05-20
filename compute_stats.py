@@ -34,6 +34,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Compute stats for a given checkpoint")
     parser.add_argument('--ckpt_name', '-c', help='Name of the checkpoint to process', default='8-step-checkpoint')
+    parser.add_argument(
+        '--foldseek_pdb_db',
+        help='Path to the Foldseek PDB database. If omitted, novelty search is skipped.',
+        default=os.environ.get("FOLDSEEK_PDB_DB"),
+    )
     args = parser.parse_args()
     ckpt_name = args.ckpt_name
 
@@ -78,5 +83,16 @@ if __name__ == "__main__":
     # df = pd.read_csv(f"foldseek_tmp/{ckpt_name}/res_cluster.tsv", sep="\t", header=None, names=["cluster", "protein"])
     # print("Diversity:", len(df["cluster"].unique()) / len(df))
 
-    subprocess.run(f"foldseek easy-search design_eval/{ckpt_name}/pdbs/designable /home/ehab02/orcd/pool/proteina_additional_files/foldseek_databases/pdb foldseek_tmp/{ckpt_name}/novelty_pdb foldseek_tmp/{ckpt_name}  --alignment-type 1 --exhaustive-search --tmscore-threshold 0.0 --max-seqs 10000000000 --format-output query,target,alntmscore,lddt", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    if args.foldseek_pdb_db:
+        subprocess.run(
+            f"foldseek easy-search design_eval/{ckpt_name}/pdbs/designable "
+            f"{args.foldseek_pdb_db} foldseek_tmp/{ckpt_name}/novelty_pdb foldseek_tmp/{ckpt_name} "
+            f"--alignment-type 1 --exhaustive-search --tmscore-threshold 0.0 "
+            f"--max-seqs 10000000000 --format-output query,target,alntmscore,lddt",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+        )
+    else:
+        print("Skipping Foldseek novelty search because --foldseek_pdb_db was not provided.")
     # subprocess.run(f"foldseek easy-search design_eval/{ckpt_name}/pdbs/designable ./additional_files/foldseek_databases/afdb foldseek_tmp/{ckpt_name}/novelty_afdb foldseek_tmp/{ckpt_name}  --alignment-type 1 --exhaustive-search --tmscore-threshold 0.0 --max-seqs 10000000000 --format-output query,target,alntmscore,lddt", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)

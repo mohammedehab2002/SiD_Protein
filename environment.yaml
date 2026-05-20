@@ -1,4 +1,4 @@
-name: sid_protein_env
+name: motif_sid_protein_env
 channels:
   - nvidia
   - pytorch

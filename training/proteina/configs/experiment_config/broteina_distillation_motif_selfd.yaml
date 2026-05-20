@@ -1,0 +1,19 @@
+defaults:
+  - inference_base
+  - _self_
+
+run_name_: broteina_distillation_motif_selfd
+ckpt_name: motif_selfd_chk_epoch=00000018_step=000000067200.ckpt
+dataset_config_subdir: broteina
+dataset: motif_scaffold_train
+
+self_cond: True
+
+training:
+  motif_conditioning: True
+  motif_conditioning_sequence_rep: True
+  use_provided_motifs: True
+
+sampling_caflow:
+  sampling_mode: sc
+  sc_scale_noise: 0.45
