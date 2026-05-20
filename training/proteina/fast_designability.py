@@ -13,6 +13,8 @@ import torch.nn.functional as F
 import random
 import os.path
 import subprocess
+from pathlib import Path
+import pickle
 
 from packages.ProteinMPNN.protein_mpnn_utils import loss_nll, loss_smoothed, gather_edges, gather_nodes, gather_nodes_t, cat_neighbors_nodes, _scores, _S_to_seq, tied_featurize, parse_PDB, parse_fasta
 from packages.ProteinMPNN.protein_mpnn_utils import StructureDataset, StructureDatasetPDB, ProteinMPNN
@@ -77,9 +79,13 @@ def get_args():
 
 class Designability:
 
-    def __init__(self, device):
+    def __init__(self, device, out_dir):
 
         self.device = device
+        self.out_dir = Path(out_dir) / "viz"
+
+        print(f"{self.out_dir=}")
+        os.makedirs(self.out_dir, exist_ok=True)
 
         args = get_args()
 
@@ -210,7 +216,7 @@ class Designability:
 
         return all_seqs, grads
 
-    def scRMSD(self, proteins, return_grad = False):
+    def scRMSD(self, proteins, nres, return_grad = False):
 
         proteins.requires_grad_(return_grad)
         
@@ -218,10 +224,9 @@ class Designability:
         proteins_copied = proteins.repeat_interleave(ns, dim=0)
         with torch.set_grad_enabled(return_grad):
             seqs, log_prob_grads = self.proteinMPNN(proteins_copied, return_grad)
-        batch_size = min(20, len(seqs))
         rmsd_list = []
-        for i in range(0, len(seqs), batch_size):
-            batch_seqs = seqs[i:i+batch_size]
+        for i in range(0, len(seqs), ns):
+            batch_seqs = seqs[i:i+ns]
             with torch.no_grad():
                 inputs = self.tokenizer(
                     batch_seqs,
@@ -241,6 +246,14 @@ class Designability:
                 coors_1, coors_2 = kabsch_align_ind(pred_positions[j], proteins[(i+j)//ns], ret_both=True)
                 sq_err = (coors_1 - coors_2) ** 2
                 rmsd_list.append(sq_err.sum(dim=-1).mean().sqrt())
+
+            cur_rmsds = rmsd_list[-ns:]
+            opt = cur_rmsds.index(min(cur_rmsds))
+            if min(cur_rmsds) < 2:
+                optimal_output = {k:outputs[k][opt] for k in outputs.keys() if len(outputs[k].shape) > 0}
+                num_file = len([i for i in os.listdir(self.out_dir) if i.startswith(f"{nres}_")])
+                torch.save(optimal_output, self.out_dir / f"{nres}_{num_file}.pt")
+
 
         rmsd_list = torch.stack(rmsd_list)
         rmsd_list = rmsd_list.view(-1, ns)

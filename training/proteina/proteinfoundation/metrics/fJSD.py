@@ -118,7 +118,7 @@ class FoldJensenShannonDivergence(Metric):
         )
         jsd /= 2.0
 
-        return jsd
+        return jsd * 10
 
     def reset(self) -> None:
         """Reset metric states."""

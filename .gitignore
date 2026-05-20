@@ -28,5 +28,15 @@ protein_out
 .env
 additional_files/*
 design_eval/*
+design_eval_viz/*
+design_eval_sc_search/*
+design_eval_rebuttal/*
+design_eval_metrics/*
+design_eval_neurips/*
+*.csv
+eval_tmp/*
+evaluation/eval_tmp_neurips/*
+evaluation/foldseek_tmp_neurips/*
+evaluation/distributional/*
 foldseek_tmp/*
 run_sid_proteina.sh

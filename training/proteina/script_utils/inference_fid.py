@@ -11,8 +11,8 @@
 import os
 import sys
 
-root = os.path.abspath(".")
-sys.path.append(root)  # Adds project's root directory
+root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.append(root)  # Adds training/proteina to PYTHONPATH for local execution
 
 import os
 import hydra
@@ -27,6 +27,10 @@ from torch_geometric import transforms as T
 import lightning as L
 
 from proteinfoundation.metrics.metric_factory import GenerationMetricFactory, generation_metric_from_list
+from proteinfoundation.metrics.distributional_eval import (
+    format_distributional_metrics,
+    summarize_distributional_metrics,
+)
 
 
 if __name__ == "__main__":
@@ -37,7 +41,11 @@ if __name__ == "__main__":
     parser.add_argument("--num_workers", type=int, default=32, help="Number of workers for data loading.")
     args = parser.parse_args()
 
-    pdb_list = [os.path.join(args.data_dir, f) for f in os.listdir(args.data_dir)]
+    pdb_list = [
+        os.path.join(args.data_dir, f)
+        for f in sorted(os.listdir(args.data_dir))
+        if f.endswith(".pdb")
+    ]
 
     data_path = os.environ["DATA_PATH"]
     model_name = "gearnet_ca.pth" if args.ca_only else "gearnet.pth"
@@ -45,7 +53,7 @@ if __name__ == "__main__":
     feat_name = "%seval_ca_features.pth" if args.ca_only else "%seval_features.pth"
     feat_path = os.path.join(data_path, "metric_factory", "features", feat_name)
 
-    ref_db = ["pdb_", "afdb_", "pdb_cath_"]
+    ref_db = ["pdb_", "D_FS_"]
     results = {}
     for db in ref_db:
         metric_factory = GenerationMetricFactory(
@@ -69,7 +77,7 @@ if __name__ == "__main__":
     metric_factory = GenerationMetricFactory(
         ckpt_path=ckpt_path, 
         ca_only=args.ca_only, 
-        metrics=["IS_C", "IS_A", "IS_T"], 
+        metrics=["fS_C", "fS_A", "fS_T"],
         real_features_path=None,
         reset_real_features=False,
     )
@@ -83,4 +91,11 @@ if __name__ == "__main__":
     )
     results.update(metric)
 
+    paper_results = format_distributional_metrics(
+        summarize_distributional_metrics(results)
+    )
+
+    print("Raw metrics:")
     print(pprint.pformat(results))
+    print("\nPaper-style distributional metrics:")
+    print(pprint.pformat(paper_results))

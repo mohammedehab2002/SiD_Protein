@@ -211,28 +211,28 @@ def run_all_evaluations(eval_input_dir, device=None):
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    print("Running designability evaluation...")
-    run_designability_evaluation(eval_input_dir, device=device)
-    print("Gathering designability results...")
-    designability_results = gather_designability_results(eval_input_dir)
+    # print("Running designability evaluation...")
+    # run_designability_evaluation(eval_input_dir, device=device)
+    # print("Gathering designability results...")
+    # designability_results = gather_designability_results(eval_input_dir)
     print("Running foldseek evaluation...")
     foldseek_results = run_foldseek(eval_input_dir, os.path.join(os.getenv("DATA_PATH"), "foldseek_databases"))
     print("Running FID evaluation...")
     fid_results = run_fid_evaluation(eval_input_dir, device=device)
     print("All evaluations completed.")
     nstep = extract_step(os.path.basename(eval_input_dir))
-    designability_results['nstep'] = nstep
+    # designability_results['nstep'] = nstep
 
     # Calculate effective sampling time
-    time_results = pd.read_csv(os.path.join(eval_input_dir, "total_time.csv"))
-    total_time = time_results['time'].values[0]
-    nsample = time_results['nsample'].values[0]
-    effective_time_per_sample = total_time / (nsample * designability_results['designability_RMSD']) \
-        if designability_results['designability_RMSD'] > 0 else float('inf')
-    designability_results['effective_time'] = effective_time_per_sample
+    # time_results = pd.read_csv(os.path.join(eval_input_dir, "total_time.csv"))
+    # total_time = time_results['time'].values[0]
+    # nsample = time_results['nsample'].values[0]
+    # effective_time_per_sample = total_time / (nsample * designability_results['designability_RMSD']) \
+    #     if designability_results['designability_RMSD'] > 0 else float('inf')
+    # designability_results['effective_time'] = effective_time_per_sample
     
     # Save combined results
-    merged = combine_results(designability_results, foldseek_results, fid_results)
+    merged = combine_results(foldseek_results, fid_results)
     merged.to_csv(os.path.join(eval_input_dir, "combined_results.csv"), index=False)
     print("Saved combined_results.csv")
 
@@ -249,8 +249,8 @@ def run_all_evaluations(eval_input_dir, device=None):
 
     return merged
 
-def combine_results(designability_results, foldseek_results, fid_results):
-    merged = {**designability_results, **foldseek_results, **fid_results}
+def combine_results(foldseek_results, fid_results):
+    merged = {**foldseek_results, **fid_results}
     merged = pd.DataFrame([merged])
 
     # Calculate average PDB_fjSD and AFDB_fjSD, fS, and secondary structure summary

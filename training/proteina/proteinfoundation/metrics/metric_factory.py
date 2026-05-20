@@ -24,11 +24,11 @@ from tqdm import tqdm
 
 from proteinfoundation.metrics.fid import ProteinFrechetInceptionDistance
 from proteinfoundation.metrics.fJSD import FoldJensenShannonDivergence
+from proteinfoundation.metrics.fold_score import ProteinFoldScore
 from proteinfoundation.metrics.gearnet_utils import NoTrainBBGearNet, NoTrainCAGearNet
-from proteinfoundation.metrics.inception_score import ProteinInceptionScore
 from proteinfoundation.utils.constants import PDB_TO_OPENFOLD_INDEX_TENSOR
 
-from training.proteina.graphein_utils.graphein_utils import protein_to_pyg
+from graphein_utils.graphein_utils import protein_to_pyg
 
 
 class GenerationMetricFactory(ModuleList):
@@ -50,7 +50,7 @@ class GenerationMetricFactory(ModuleList):
         Initialize the GeneationMetric Factory with specified structure encoder nd metrics.
 
         Args:
-            metrics (List[str]): List of metric names to be included. Metric names should be in ["FID", "IS_C", "IS_A", "IS_T", "fJSD_C", "fJSD_A", "fJSD_T"]
+            metrics (List[str]): List of metric names to be included. Metric names should be in ["FID", "fS_C", "fS_A", "fS_T", "fJSD_C", "fJSD_A", "fJSD_T"]
             ckpt_path (str): Path to the checkpoint of the structure encoder.
             ca_only (Optional[bool]): Whether to use CA-only structure model or Backbone structure model.
                 Defaults to False.
@@ -82,8 +82,8 @@ class GenerationMetricFactory(ModuleList):
                 _metric = ProteinFrechetInceptionDistance(
                     num_features, reset_real_features=reset_real_features
                 )
-            elif metric in ["IS_C", "IS_A", "IS_T"]:
-                _metric = ProteinInceptionScore(splits=1)
+            elif metric in ["IS_C", "IS_A", "IS_T", "fS_C", "fS_A", "fS_T"]:
+                _metric = ProteinFoldScore(splits=1)
             elif metric in ["fJSD_C", "fJSD_A", "fJSD_T"]:
                 for k, v in self.structure_encoder.num_classes:
                     if k == metric[-1]:
@@ -156,7 +156,7 @@ class GenerationMetricFactory(ModuleList):
         for metric, metric_module in zip(self.metrics, self.metric_modules):
             if metric == "FID":
                 metric_module.update(output["protein_feature"], real=real)
-            elif metric in ["IS_C", "IS_A", "IS_T"] and not real:
+            elif metric in ["IS_C", "IS_A", "IS_T", "fS_C", "fS_A", "fS_T"] and not real:
                 level = metric[-1]
                 metric_module.update(output[f"pred_{level}"])
             elif metric in ["fJSD_C", "fJSD_A", "fJSD_T"]:

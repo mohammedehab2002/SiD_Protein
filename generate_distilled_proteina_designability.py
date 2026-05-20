@@ -51,7 +51,7 @@ def main(model_path, out_dir, lengths, conditional, num_batch, batch_size, seed,
     out_dir = os.path.join(out_dir, model_path.split('/')[-1].replace('.pt','') + noise_scale_identifier)
     os.makedirs(out_dir, exist_ok=True)
 
-    designability = Designability('cuda')
+    designability = Designability('cuda', out_dir)
 
     # Load the distilled model
     print(f"Loading checkpoint {model_path}")
@@ -84,6 +84,9 @@ def generate_unconditional(out_dir, G, lengths, num_batch, batch_size, device, n
     start_time = time.time()
     for niter in tqdm(range(num_batch), desc="Generating unconditional batches"):
         for n in tqdm(lengths):
+        # niter = 0
+        # count = 0
+        # while True:
             # Prepare batch. Here all proteins in the batch have the same length n.
             batch = {'nres': torch.tensor([n]), 'dt': torch.tensor([0.0025], dtype=torch.float32), 
                      'nsamples': torch.tensor([batch_size])}
@@ -98,6 +101,10 @@ def generate_unconditional(out_dir, G, lengths, num_batch, batch_size, device, n
             else:
                 x_g = generate_multistep(G, batch, batch_shape, n, mask, x_g, nstep, noise_scale, device)
             save_structures(x_g, f"{eval_coords_dir}", f"{eval_pdb_dir}", n, niter, designability=designability, seed=seed)
+            # niter += 1
+            # if count > 1:
+            #     break
+
     
     # end_time = time.time()
     # with open(os.path.join(eval_input_dir, "total_time.csv"), "w", newline="") as f:
@@ -182,9 +189,10 @@ def generate_multistep(G, batch, batch_shape, n, mask, x_g, nstep, noise_scale, 
     return x_g
 
 def save_structures(x_g, eval_coords_dir, eval_pdb_dir, n, niter, cath_code=None, sampled_cath_codes=None, designability=None, seed=None):
-    scores = designability.scRMSD(nm_to_ang(x_g.detach()))
+    scores = designability.scRMSD(nm_to_ang(x_g.detach()), n)
     csv_data_batch = []
     
+    count = 0
     for sample_idx in range(x_g.shape[0]):
         coords = x_g[sample_idx].detach()
         coords_atom37 = samples_to_atom37(coords)
@@ -197,6 +205,8 @@ def save_structures(x_g, eval_coords_dir, eval_pdb_dir, n, niter, cath_code=None
         np.savetxt(os.path.join(eval_coords_dir, filename + '.npy'), coords, fmt='%.3f', delimiter=',')
         
         score_val = scores[sample_idx].item() if hasattr(scores[sample_idx], 'item') else scores[sample_idx]
+        if score_val < 2:
+            count += 1
         
         write_prot_to_pdb(coords_atom37.cpu().numpy(), 
                         os.path.join(os.path.join(eval_pdb_dir, "designable" if score_val < 2 else "undesignable"), filename + '.pdb'), 
@@ -233,6 +243,9 @@ def save_structures(x_g, eval_coords_dir, eval_pdb_dir, n, niter, cath_code=None
         finally:
             # 4. Release Lock safely
             fcntl.flock(f, fcntl.LOCK_UN)
+
+    return count
+
 
 def create_directories(eval_input_dir):
     #if os.path.exists(eval_input_dir):
